@@ -39,83 +39,7 @@ if (!function_exists('flash_message')) {
     }
 }
 
-function add_recipients($mail, $emails_str, $method = 'addAddress') {
-    if (!empty($emails_str)) {
-        $emails = explode(',', $emails_str);
-        foreach ($emails as $email) {
-            if (filter_var(trim($email), FILTER_VALIDATE_EMAIL)) {
-                $mail->{$method}(trim($email));
-            }
-        }
-    }
-}
-
-if (!function_exists('send_verification_email')) {
-    function send_verification_email($user_email, $token) {
-        $mail = new PHPMailer(true);
-        $verification_link = BASE_URL . '?page=verify&token=' . $token;
-
-        try {
-            $mail->isSMTP();
-            $mail->Host = SMTP_HOST;
-            $mail->SMTPAuth = true;
-            $mail->Username = SMTP_USER;
-            $mail->Password = SMTP_PASS;
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-            $mail->Port = SMTP_PORT;
-
-            $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
-            $mail->addAddress($user_email);
-            $mail->isHTML(true);
-            $mail->Subject = 'Verify Your Account - Issue Ticket System';
-            $mail->Body    = "
-                <html><body>
-                    <h2>Welcome to Issue Ticket System!</h2>
-                    <p>Please click the button below to verify your email address and activate your account.</p>
-                    <a href='{$verification_link}' style='background-color: #4f46e5; color: white; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold; display: inline-block;'>Verify Account</a>
-                    <p>If you did not create an account, no further action is required.</p>
-                </body></html>";
-
-            $mail->send();
-            return true;
-        } catch (Exception $e) {
-            return false;
-        }
-    }
-}
-
-if (!function_exists('send_password_reset_email')) {
-    function send_password_reset_email($user_email, $temp_password) {
-        $mail = new PHPMailer(true);
-        try {
-            $mail->isSMTP();
-            $mail->Host = SMTP_HOST;
-            $mail->SMTPAuth = true;
-            $mail->Username = SMTP_USER;
-            $mail->Password = SMTP_PASS;
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-            $mail->Port = SMTP_PORT;
-
-            $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
-            $mail->addAddress($user_email);
-            $mail->isHTML(true);
-            $mail->Subject = 'Your Temporary Password - Issue Ticket System';
-            $mail->Body    = "
-                <html><body>
-                    <h2>Password Reset Request</h2>
-                    <p>Your temporary password is: <strong>{$temp_password}</strong></p>
-                    <p>Please log in and change your password immediately from your profile page.</p>
-                </body></html>";
-
-            $mail->send();
-            return true;
-        } catch (Exception $e) {
-            return false;
-        }
-    }
-}
-
-
+// ============== FUNGSI EMAIL ===============
 if (!function_exists('send_notification_email')) {
     function send_notification_email($pdo, $issue_id, $comment_id = null) {
         $stmt_issue = $pdo->prepare("SELECT i.*, u.name as drafter_name, u.email as drafter_email FROM issues i JOIN users u ON i.drafter_id = u.id WHERE i.id = ?");
@@ -129,156 +53,126 @@ if (!function_exists('send_notification_email')) {
 
         $mail = new PHPMailer(true);
         try {
+            // SMTP Config
             $mail->isSMTP(); $mail->Host = SMTP_HOST; $mail->SMTPAuth = true; $mail->Username = SMTP_USER; $mail->Password = SMTP_PASS; $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS; $mail->Port = SMTP_PORT;
             $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
             $mail->isHTML(true);
-            if (file_exists('uploads/alert.png')) $mail->addEmbeddedImage('uploads/alert.png', 'alert_icon');
 
             $template_path = 'email_template.html';
             if (!file_exists($template_path)) return false;
             $base_body = file_get_contents($template_path);
 
-            $theme_color = '#4338ca';
+            // THEME COLOR
+            $theme_color = '#3b82f6'; $theme_color_light = '#dbeafe';
             switch ($issue['condition']) {
-                case 'Urgent': $theme_color = '#dc2626'; break;
-                case 'High': $theme_color = '#f59e0b'; break;
-                case 'Low': $theme_color = '#16a34a'; break;
+                case 'Urgent': $theme_color = '#ef4444'; $theme_color_light = '#fee2e2'; break;
+                case 'High': $theme_color = '#f59e0b'; $theme_color_light = '#fef3c7'; break;
+                case 'Low': $theme_color = '#22c55e'; $theme_color_light = '#dcfce7'; break;
             }
 
-            $image_html = '';
-            if(!empty($issue['image_paths'])) {
+            // ATTACHMENT BLOCK
+            $attachment_html_block = '';
+            if (!empty($issue['image_paths'])) {
                 $image_paths = json_decode($issue['image_paths'], true);
-                if(is_array($image_paths) && count($image_paths) > 0) {
-                    $image_html = '<div style="margin-top: 15px; width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;"><table role="presentation" style="border-spacing:0;"><tr>';
+                if (is_array($image_paths) && count($image_paths) > 0) {
+                    $image_grid = '<table width="100%" style="border-spacing: 0; margin-top: 12px;"><tr>';
                     foreach($image_paths as $index => $path) {
                         if(file_exists($path)) {
-                            $mail->addEmbeddedImage($path, 'issue_image_' . $index);
-                            $image_html .= '<td style="padding-right: 10px;"><img src="cid:issue_image_'.$index.'" alt="Issue Image '.($index+1).'" style="width: 250px; height: auto; border-radius: 8px; display: block;"></td>';
+                            $cid = 'issue_image_' . $index;
+                            $mail->addEmbeddedImage($path, $cid);
+                            $image_grid .= '<td style="padding: 0 4px;"><img src="cid:'.$cid.'" alt="Attachment" style="width: 100%; height: auto; border-radius: 8px; display: block;"></td>';
                         }
                     }
-                    $image_html .= '</tr></table></div>';
+                    $image_grid .= '</tr></table>';
+                    $attachment_html_block = '<tr><td style="padding-top: 16px;"><table width="100%" class="card" style="background-color:#f8fafc;"><tr><td><p class="h2">Attachments</p>'.$image_grid.'</td></tr></table></td></tr>';
                 }
             }
             
+            // HISTORY BLOCK (Bubble Chat)
             $history_html = '';
             foreach($updates as $update) {
                 $author_display = htmlspecialchars($update['created_by']);
-                 if ($update['is_status_change']) {
-                    $author_display = 'System';
-                } elseif($update['created_by'] === 'Drafter') {
-                    $author_display = htmlspecialchars($issue['drafter_name']) . ' (Drafter)';
-                } elseif($update['created_by'] === 'PIC') {
-                    $author_display = 'PIC';
-                }
-                $history_html .= "<div style='margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #f1f5f9;'><p style='font-size: 14px; font-weight: 600; color: #1e293b; margin: 0 0 4px;'>{$author_display}</p><p style='font-size: 14px; color: #475569; margin: 0;'>".nl2br(htmlspecialchars($update['notes']))."</p>";
-
+                if ($update['is_status_change']) $author_display = "System";
+                
+                $attachments_comment_html = '';
                 if (!empty($update['attachments'])) {
                     $attachments = json_decode($update['attachments'], true);
                     if(is_array($attachments) && count($attachments) > 0) {
-                        $history_html .= '<div style="margin-top: 10px; display: flex; gap: 10px;">';
-                        foreach($attachments as $att_index => $att_path) {
+                        $attachments_comment_html .= '<div style="margin-top: 8px;">';
+                        foreach($attachments as $att_path) {
                             if(file_exists($att_path)) {
-                                $cid = 'comment_'. $update['id'] .'_att_' . $att_index;
+                                $cid = 'comment_'. uniqid() .'_att';
                                 $mail->addEmbeddedImage($att_path, $cid);
-                                $history_html .= '<img src="cid:'.$cid.'" style="width: 80px; height: 80px; border-radius: 8px; object-fit: cover;">';
+                                $attachments_comment_html .= '<img src="cid:'.$cid.'" style="max-width: 80px; height: auto; border-radius: 8px; display:inline-block; margin-right: 8px;">';
                             }
                         }
-                        $history_html .= '</div>';
+                        $attachments_comment_html .= '</div>';
                     }
                 }
-                $history_html .= "</div>";
+                
+                $history_html .= '<div class="bubble" style="background-color: #ffffff;">
+                                    <p style="font-size: 13px; font-weight: 600; color: #1e293b; margin: 0 0 4px;">'.$author_display.' <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">'.date('d M Y, H:i', strtotime($update['created_at'])).'</span></p>
+                                    <p style="font-size: 14px; color: #334155; margin: 0;">'.nl2br(htmlspecialchars($update['notes'])).'</p>
+                                    '.$attachments_comment_html.'
+                                </div>';
             }
-            
-            // Breadcrumb Generation for Email
+            if (empty($history_html)) $history_html = '<p style="font-size: 14px; color: #64748b; text-align: center;">No updates yet.</p>';
+
+            // BREADCRUMB BLOCK (New Style)
             $statuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
             $currentIndex = array_search($issue['status'], $statuses);
-            $breadcrumb_html = '<table role="presentation" style="width:100%; border-spacing:0;"><tr>';
+            $breadcrumb_html = '';
             foreach ($statuses as $index => $status) {
-                $dot_color = '#cbd5e1'; 
-                $text_color = '#64748b';
-                $font_weight = 'normal';
-                $line_color = '#e2e8f0';
-
-                if ($index < $currentIndex) { 
-                    $dot_color = '#4f46e5'; 
-                    $text_color = '#16a34a'; 
-                    $line_color = '#4f46e5';
-                } elseif ($index === $currentIndex) {
-                    $dot_color = '#4f46e5';
-                    $text_color = '#4f46e5';
-                    $font_weight = 'bold';
-                }
+                $is_active = ($index === $currentIndex);
+                $is_done = ($index < $currentIndex);
                 
-                $breadcrumb_html .= '<td style="text-align:center; vertical-align:top; width:25%;">';
-                $breadcrumb_html .= '<div style="margin:0 auto; width:16px; height:16px; background-color:'.$dot_color.'; border-radius:50%;"></div>';
-                $breadcrumb_html .= '<p style="font-size:12px; color:'.$text_color.'; font-weight:'.$font_weight.'; margin-top:8px;">'.$status.'</p>';
-                $breadcrumb_html .= '</td>';
+                $bg_color = $is_active ? $theme_color : ($is_done ? '#e2e8f0' : '#f8fafc');
+                $text_color = $is_active ? '#ffffff' : ($is_done ? '#475569' : '#94a3b8');
+                $border = $is_active ? 'none' : '1px solid #e2e8f0';
 
+                $breadcrumb_html .= '<span style="display: inline-block; padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 600; background-color:'.$bg_color.'; color:'.$text_color.'; border:'.$border.';">'.$status.'</span>';
                 if ($index < count($statuses) - 1) {
-                    $breadcrumb_html .= '<td style="width:auto; padding-top:7px; padding-left: 5px; padding-right: 5px;"><div style="width:100%; height:2px; background-color:'.$line_color.';"></div></td>';
+                    $breadcrumb_html .= '<span style="font-size: 14px; color: #cbd5e1; padding: 0 8px; vertical-align: middle;">&gt;</span>';
                 }
             }
-            $breadcrumb_html .= '</tr></table>';
 
+            // REPLACEMENTS
             $common_replacements = [
-                '{{theme_color}}' => $theme_color,
+                '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
+                '{{drafter_name}}' => htmlspecialchars($issue['drafter_name']),
                 '{{issue_title}}' => htmlspecialchars($issue['title']),
                 '{{urgency_level}}' => htmlspecialchars($issue['condition']),
                 '{{location}}' => htmlspecialchars($issue['location']),
-                '{{image_block}}' => $image_html,
+                '{{attachment_block}}' => $attachment_html_block,
                 '{{history_block}}' => $history_html,
                 '{{breadcrumb_html}}' => $breadcrumb_html,
             ];
 
-            $all_recipients = array_merge(explode(',', $issue['pic_emails']), explode(',', $issue['cc_emails']), explode(',', $issue['bcc_emails']), [$issue['drafter_email']]);
-            $unique_recipients = array_unique(array_filter(array_map('trim', $all_recipients)));
+            // SENDING LOGIC...
+            $all_recipients = array_unique(array_filter(array_map('trim', array_merge(explode(',', $issue['pic_emails']), explode(',', $issue['cc_emails']), explode(',', $issue['bcc_emails']), [$issue['drafter_email']]))));
+            $commenter_email = $comment_id && isset($updates[count($updates)-1]) ? $updates[count($updates)-1]['created_by'] : '';
             
-            $latest_comment = $comment_id ? end($updates) : null;
-            $commenter_email = '';
-            if($latest_comment) {
-                if($latest_comment['created_by'] === 'Drafter') $commenter_email = $issue['drafter_email'];
-                elseif($latest_comment['created_by'] === 'PIC') $commenter_email = 'is_a_pic';
-                else $commenter_email = $latest_comment['created_by'];
-            }
-
-            foreach ($unique_recipients as $recipient) {
+            foreach ($all_recipients as $recipient) {
                 if ($comment_id && $recipient === $commenter_email) continue;
                 
-                $mail->clearAllRecipients();
-                $mail->addAddress($recipient);
-                
-                $body = $base_body;
-                $body = str_replace(array_keys($common_replacements), array_values($common_replacements), $body);
-                
-                $reported_by_text = ($recipient === $issue['drafter_email']) ? 'You' : htmlspecialchars($issue['drafter_name']);
-                $body = str_replace('{{reported_by}}', $reported_by_text, $body);
+                $mail->clearAllRecipients(); $mail->addAddress($recipient);
+                $body = str_replace(array_keys($common_replacements), array_values($common_replacements), $base_body);
                 
                 if ($comment_id) {
                     $mail->Subject = 'Update on Ticket: ' . $issue['title'];
-                    $body = str_replace('{{preheader}}', 'There is an update on ticket: ' . $issue['title'], $body);
-                    $body = str_replace('{{header_title}}', 'Ticket Updated', $body);
-                    $body = str_replace('{{main_description}}', 'A new update has been posted to this ticket.', $body);
+                    $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['A new update on ticket: ' . $issue['title'], 'Ticket Updated', 'A new update has been posted. See history for details.'], $body);
                 } else {
                     $mail->Subject = 'New Ticket Created: ' . $issue['title'];
-                    $body = str_replace('{{preheader}}', 'A new ticket has been created: ' . $issue['title'], $body);
-                    $body = str_replace('{{header_title}}', 'New Ticket Created', $body);
-                    $body = str_replace('{{main_description}}', nl2br(htmlspecialchars($issue['description'])), $body);
+                    $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['New ticket created: ' . $issue['title'], 'New Ticket Created', nl2br(htmlspecialchars($issue['description']))], $body);
                 }
                 
-                $body = str_replace('{{cta_link}}', BASE_URL . '?page=view_ticket&token=' . $issue['access_token'], $body);
-                $body = str_replace('{{cta_text}}', 'View Ticket', $body);
-                
-                $mail->Body = $body;
-                $mail->send();
+                $body = str_replace(['{{cta_link}}', '{{cta_text}}'], [BASE_URL . '?page=view_ticket&token=' . $issue['access_token'], 'View Full Ticket'], $body);
+                $mail->Body = $body; $mail->send();
             }
-        } catch (Exception $e) {
-            $_SESSION['flash']['error_detail'] = "Mailer Error: {$mail->ErrorInfo}";
-            return false;
-        }
+        } catch (Exception $e) { $_SESSION['flash']['error_detail'] = "Mailer Error: {$mail->ErrorInfo}"; return false; }
         return true;
     }
 }
-
 
 // ============== LOGIKA & ROUTING APLIKASI ===============
 $page = $_GET['page'] ?? 'home';
@@ -351,7 +245,6 @@ if ($action) {
                 $stmt_update->execute([$hashed_password, $user_data['id']]);
                 send_password_reset_email($email, $temp_password);
             }
-            // Always show success to prevent email enumeration
             $_SESSION['flash']['success'] = 'If an account with that email exists, a temporary password has been sent.';
             redirect('?page=login');
             break;
@@ -431,53 +324,53 @@ if ($action) {
             $issue = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($issue) {
-                $is_pic = in_array($user['email'], explode(',', $issue['pic_emails']));
-                $is_drafter = $user['id'] == $issue['drafter_id'];
-                $is_viewer = in_array($user['email'], explode(',', $issue['cc_emails'])) || in_array($user['email'], explode(',', $issue['bcc_emails']));
+                $drafter_email_stmt = $pdo->prepare("SELECT email FROM users WHERE id = ?");
+                $drafter_email_stmt->execute([$issue['drafter_id']]);
+                $drafter_email = $drafter_email_stmt->fetchColumn();
+
+                $allowed_emails = array_merge(explode(',', $issue['pic_emails']), explode(',', $issue['cc_emails']), explode(',', $issue['bcc_emails']), [$drafter_email]);
+                $is_allowed_to_comment = in_array($user['email'], array_map('trim', $allowed_emails));
+                $is_allowed_to_change_status = in_array($user['email'], array_map('trim', explode(',', $issue['pic_emails']))) || $user['id'] == $issue['drafter_id'];
 
                 $pdo->beginTransaction();
                 try {
-                    // Update status only if allowed and status has changed
-                    if (($is_pic || $is_drafter) && $new_status && $new_status !== $issue['status']) {
+                    // Update status
+                    if ($is_allowed_to_change_status && $new_status && $new_status !== $issue['status']) {
                         $stmt_update = $pdo->prepare("UPDATE issues SET status = ? WHERE id = ?");
                         $stmt_update->execute([$new_status, $issue_id]);
-
                         $status_note = "Status changed from {$issue['status']} to {$new_status} by {$user['email']}";
                         $stmt_log = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, is_status_change) VALUES (?, ?, ?, 1)");
                         $stmt_log->execute([$issue_id, $status_note, $user['email']]);
                         send_notification_email($pdo, $issue_id, $pdo->lastInsertId());
                     }
                     
-                    // Add comment if there is one
-                    if (!empty($notes) && ($is_pic || $is_drafter || $is_viewer)) {
-                         $attachments = [];
-                        if (isset($_FILES['comment_attachments']) && count($_FILES['comment_attachments']['name']) > 0 && $_FILES['comment_attachments']['name'][0] != "") {
+                    // Add comment
+                    if ($is_allowed_to_comment && (!empty($notes) || !empty($_FILES['comment_attachments']['name'][0]))) {
+                        $attachments = [];
+                        if (isset($_FILES['comment_attachments']) && !empty($_FILES['comment_attachments']['name'][0])) {
                             $target_dir = "uploads/";
+                            if (!is_dir($target_dir)) mkdir($target_dir, 0755, true);
                             foreach($_FILES['comment_attachments']['name'] as $key => $name) {
                                 if ($_FILES['comment_attachments']['error'][$key] == 0) {
-                                    $file_name = time() . '_' . basename($name);
-                                    $target_file = $target_dir . $file_name;
-                                    if (move_uploaded_file($_FILES['comment_attachments']['tmp_name'][$key], $target_file)) {
-                                        $attachments[] = $target_file;
+                                    $file_name = time() . '_' . uniqid() . '_' . basename($name);
+                                    if (move_uploaded_file($_FILES['comment_attachments']['tmp_name'][$key], $target_dir . $file_name)) {
+                                        $attachments[] = $target_dir . $file_name;
                                     }
                                 }
                             }
                         }
                         $attachments_json = count($attachments) > 0 ? json_encode($attachments) : null;
-
                         $stmt_notes = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, attachments) VALUES (?, ?, ?, ?)");
                         $stmt_notes->execute([$issue_id, $notes, $user['email'], $attachments_json]);
                         send_notification_email($pdo, $issue_id, $pdo->lastInsertId());
                     }
                     $pdo->commit();
-                } catch (Exception $e) {
-                    $pdo->rollBack();
-                }
+                } catch (Exception $e) { $pdo->rollBack(); }
             }
             redirect("?page=view_ticket&token=$token");
             break;
 
-        case 'add_comment_ajax': // From Drafter's modal
+        case 'add_comment_ajax':
             header('Content-Type: application/json');
             if (!is_logged_in()) {
                 echo json_encode(['success' => false, 'message' => 'Not logged in.']);
@@ -487,50 +380,60 @@ if ($action) {
             $comment = trim($_POST['comment']);
             $response = ['success' => false];
 
-            if (empty($comment)) {
-                $response['message'] = 'Comment cannot be empty.';
+            if (empty($comment) && (empty($_FILES['attachments']) || $_FILES['attachments']['error'][0] == UPLOAD_ERR_NO_FILE)) {
+                $response['message'] = 'Comment or attachment cannot be empty.';
                 echo json_encode($response);
                 exit();
             }
 
-            $stmt = $pdo->prepare("SELECT id FROM issues WHERE id = ? AND drafter_id = ?");
-            $stmt->execute([$issue_id, $_SESSION['user_id']]);
-            if ($stmt->fetch()) {
-                 try {
-                    $attachments = [];
-                    if (isset($_FILES['attachments']) && count($_FILES['attachments']['name']) > 0 && $_FILES['attachments']['name'][0] != '') {
-                         $target_dir = "uploads/";
-                         foreach($_FILES['attachments']['name'] as $key => $name) {
-                             if ($_FILES['attachments']['error'][$key] == 0) {
-                                $file_name = time() . '_' . basename($name);
-                                $target_file = $target_dir . $file_name;
-                                if (move_uploaded_file($_FILES['attachments']['tmp_name'][$key], $target_file)) {
-                                    $attachments[] = $target_file;
-                                }
+            $stmt = $pdo->prepare("SELECT i.*, u.email as drafter_email FROM issues i JOIN users u ON i.drafter_id = u.id WHERE i.id = ?");
+            $stmt->execute([$issue_id]);
+            $issue = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($issue) {
+                $allowed_emails = array_merge(explode(',', $issue['pic_emails']), explode(',', $issue['cc_emails']), explode(',', $issue['bcc_emails']), [$issue['drafter_email']]);
+                $is_allowed = in_array($user['email'], array_map('trim', $allowed_emails));
+
+                if ($is_allowed) {
+                    try {
+                        $attachments = [];
+                        if (isset($_FILES['attachments']) && count($_FILES['attachments']['name']) > 0 && $_FILES['attachments']['name'][0] != '') {
+                             $target_dir = "uploads/";
+                             if (!is_dir($target_dir)) { mkdir($target_dir, 0755, true); }
+                             foreach($_FILES['attachments']['name'] as $key => $name) {
+                                 if ($_FILES['attachments']['error'][$key] == 0) {
+                                    $file_name = time() . '_' . uniqid() . '_' . basename($name);
+                                    $target_file = $target_dir . $file_name;
+                                    if (move_uploaded_file($_FILES['attachments']['tmp_name'][$key], $target_file)) {
+                                        $attachments[] = $target_file;
+                                    }
+                                 }
                              }
-                         }
-                    }
-                    $attachments_json = count($attachments) > 0 ? json_encode($attachments) : null;
+                        }
+                        $attachments_json = count($attachments) > 0 ? json_encode($attachments) : null;
 
-                    $stmt_insert = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, attachments) VALUES (?, ?, ?, ?)");
-                    $stmt_insert->execute([$issue_id, $comment, 'Drafter', $attachments_json]);
-                    $last_id = $pdo->lastInsertId();
+                        $stmt_insert = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, attachments) VALUES (?, ?, ?, ?)");
+                        $stmt_insert->execute([$issue_id, $comment, $user['email'], $attachments_json]);
+                        $last_id = $pdo->lastInsertId();
 
-                    send_notification_email($pdo, $issue_id, $last_id);
+                        send_notification_email($pdo, $issue_id, $last_id);
 
-                    $stmt_fetch = $pdo->prepare("SELECT * FROM issue_updates WHERE id = ?");
-                    $stmt_fetch->execute([$last_id]);
-                    $new_comment = $stmt_fetch->fetch(PDO::FETCH_ASSOC);
-                    
-                    $new_comment['author_display'] = $user['email'];
+                        $stmt_fetch = $pdo->prepare("SELECT * FROM issue_updates WHERE id = ?");
+                        $stmt_fetch->execute([$last_id]);
+                        $new_comment = $stmt_fetch->fetch(PDO::FETCH_ASSOC);
+                        
+                        $new_comment['author_display'] = $user['email'];
 
-                    $response['success'] = true;
-                    $response['comment'] = $new_comment;
-                 } catch (PDOException $e) {
-                    $response['message'] = 'Database error.';
-                 }
+                        $response['success'] = true;
+                        $response['comment'] = $new_comment;
+                     } catch (PDOException $e) {
+                        $response['message'] = 'Database error: ' . $e->getMessage();
+                     }
+                } else {
+                    $response['message'] = 'You are not authorized to comment on this ticket.';
+                }
             } else {
-                 $response['message'] = 'Invalid operation.';
+                 $response['message'] = 'Invalid operation. Issue not found.';
             }
             echo json_encode($response);
             exit();
@@ -607,7 +510,7 @@ if ($page === 'logout') {
         .condition-border-Normal { border-top: 4px solid #3b82f6; }
         .condition-border-Low { border-top: 4px solid #22c55e; }
         .form-input {
-            border: 1px solid #cbd5e1; /* slate-300 */
+            border: 1px solid #cbd5e1;
         }
         .email-tags-container {
             display: flex;
@@ -823,13 +726,7 @@ if ($page === 'logout') {
                             $augmented_updates = [];
                             $updates = $updates_by_issue[$issue['id']] ?? [];
                             foreach($updates as $update) {
-                                if ($update['created_by'] === 'Drafter') {
-                                    $update['author_display'] = $issue['drafter_email'];
-                                } elseif ($update['created_by'] === 'PIC') {
-                                    $update['author_display'] = $issue['pic_emails'] . ' (PIC)';
-                                } else { // It's a viewer's email
-                                    $update['author_display'] = $update['created_by'];
-                                }
+                                $update['author_display'] = $update['created_by'];
                                 $augmented_updates[] = $update;
                             }
                             $issue['updates'] = $augmented_updates;
@@ -880,7 +777,6 @@ if ($page === 'logout') {
                                 <?php endforeach; ?>
                             </div>
                             <?php else: ?>
-                            <!-- Table View -->
                             <div class="overflow-x-auto bg-white rounded-xl shadow-md">
                                  <table class="min-w-full">
                                     <thead class="bg-slate-50">
@@ -1013,11 +909,8 @@ if ($page === 'logout') {
                         $is_pic_or_drafter = false;
                         if(is_logged_in()) {
                             $allowed_emails = array_merge(explode(',', $issue['cc_emails']), explode(',', $issue['bcc_emails']), [$issue['drafter_email']], explode(',', $issue['pic_emails']));
-                            foreach($allowed_emails as $email) {
-                                if (trim($email) === $user['email']) {
-                                    $is_allowed = true;
-                                    break;
-                                }
+                            if(in_array($user['email'], array_map('trim', $allowed_emails))) {
+                                $is_allowed = true;
                             }
                             if (in_array($user['email'], array_map('trim', explode(',', $issue['pic_emails']))) || $user['id'] == $issue['drafter_id']) {
                                 $is_pic_or_drafter = true;
@@ -1107,35 +1000,41 @@ if ($page === 'logout') {
                                     <?php endif; ?>
                                     <div class="col-span-3 bg-white p-4 rounded-xl shadow-sm border">
                                         <h4 class="font-semibold text-slate-600 text-sm uppercase tracking-wider mb-4">History & Comments</h4>
-                                        <div class="space-y-4 max-h-48 overflow-y-auto pr-2">
+                                        <div class="space-y-4 max-h-96 overflow-y-auto pr-2">
                                             <?php foreach($updates as $update): ?>
                                                 <div class="text-sm flex gap-3 items-start">
                                                     <?php 
-                                                        $isPIC = $update['created_by'] === 'PIC';
-                                                        $author_display = $update['created_by'];
-                                                        if ($update['is_status_change']) {
-                                                            $author_display = "System";
-                                                        } elseif ($isPIC) {
-                                                            $author_display = $issue['pic_emails'] . ' (PIC)';
-                                                        } elseif ($update['created_by'] === 'Drafter') {
-                                                            $author_display = $issue['drafter_email'];
-                                                        }
+                                                        $isSystem = $update['is_status_change'];
+                                                        $author_display = $isSystem ? "System" : htmlspecialchars($update['created_by']);
                                                     ?>
-                                                    <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white font-bold <?php echo ($isPIC || strpos($author_display, '(PIC)')) ? 'bg-blue-500' : 'bg-green-500'; ?>">
+                                                    <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white font-bold <?php echo $isSystem ? 'bg-slate-400' : 'bg-indigo-500'; ?>">
                                                         <?php echo strtoupper(substr($author_display, 0, 1)); ?>
                                                     </div>
-                                                    <div class="flex-grow p-3 rounded-lg <?php echo ($isPIC || strpos($author_display, '(PIC)')) ? 'bg-blue-50' : 'bg-green-50'; ?>">
-                                                        <p class="font-semibold text-slate-800"><?php echo htmlspecialchars($author_display); ?> <span class="text-xs text-slate-500 font-normal ml-2"><?php echo date('d M Y, H:i', strtotime($update['created_at'])); ?></span></p>
+                                                    <div class="flex-grow p-3 rounded-lg <?php echo $isSystem ? 'bg-slate-50' : 'bg-indigo-50'; ?>">
+                                                        <p class="font-semibold text-slate-800"><?php echo $author_display; ?> <span class="text-xs text-slate-500 font-normal ml-2"><?php echo date('d M Y, H:i', strtotime($update['created_at'])); ?></span></p>
                                                         <p class="mt-1 text-slate-700"><?php echo nl2br(htmlspecialchars($update['notes'])); ?></p>
+                                                        <?php
+                                                            if (!empty($update['attachments'])) {
+                                                                $attachments = json_decode($update['attachments'], true);
+                                                                if (is_array($attachments) && count($attachments) > 0) {
+                                                                    echo '<div class="mt-2 flex flex-wrap gap-2">';
+                                                                    foreach($attachments as $att_path) {
+                                                                        if (file_exists($att_path)) {
+                                                                            echo '<a href="'.htmlspecialchars($att_path).'" target="_blank"><img src="'.htmlspecialchars($att_path).'" class="w-20 h-20 object-cover rounded-md border hover:ring-2 hover:ring-indigo-400"></a>';
+                                                                        }
+                                                                    }
+                                                                    echo '</div>';
+                                                                }
+                                                            }
+                                                        ?>
                                                     </div>
                                                 </div>
                                             <?php endforeach; ?>
                                         </div>
                                         <?php if($is_allowed): ?>
-                                        <form action="?page=view_ticket" method="POST" class="mt-4">
+                                        <form action="?page=view_ticket&token=<?php echo htmlspecialchars($token); ?>" method="POST" class="mt-6 border-t pt-4" enctype="multipart/form-data">
                                             <input type="hidden" name="action" value="update_status_viewer">
                                             <input type="hidden" name="issue_id" value="<?php echo $issue['id']; ?>">
-                                            <input type="hidden" name="token" value="<?php echo htmlspecialchars($token); ?>">
                                             
                                             <?php if($is_pic_or_drafter): ?>
                                             <div class="mb-4">
@@ -1151,9 +1050,20 @@ if ($page === 'logout') {
                                             </div>
                                             <?php endif; ?>
                                             
-                                            <div class="flex items-start gap-3">
-                                                <textarea name="comment" class="flex-grow p-3 border border-slate-300 rounded-lg text-sm" rows="1" placeholder="Add a comment..."></textarea>
-                                                <button type="submit" class="px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">Post Update</button>
+                                            <div>
+                                                <label for="comment" class="block text-sm font-medium text-slate-700">Add a Comment</label>
+                                                <textarea name="comment" id="comment" class="mt-1 w-full p-3 border border-slate-300 rounded-lg text-sm" rows="3" placeholder="Type your comment here..."></textarea>
+                                            </div>
+                                            <div class="mt-2">
+                                                <label for="comment-attachments-page" class="text-sm font-medium text-indigo-600 cursor-pointer hover:text-indigo-800 flex items-center gap-2">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                                                    Attach Files
+                                                </label>
+                                                <input type="file" name="comment_attachments[]" id="comment-attachments-page" class="sr-only" multiple accept="image/png, image/jpeg, image/gif">
+                                                <div id="comment-attachment-previews-page" class="mt-2 flex flex-wrap gap-2"></div>
+                                            </div>
+                                            <div class="text-right mt-4">
+                                                <button type="submit" class="px-5 py-2.5 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors">Post Update</button>
                                             </div>
                                         </form>
                                         <?php else: ?>
@@ -1176,7 +1086,6 @@ if ($page === 'logout') {
         </main>
     </div>
 
-    <!-- Modal Detail Tiket (Bento UI) -->
     <div id="issueModal" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 transition-opacity duration-300">
         <div class="w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col transform transition-all duration-300 scale-95 opacity-0" id="modalContent">
             <div class="flex justify-between items-center p-5 border-b border-slate-200">
@@ -1209,11 +1118,20 @@ if ($page === 'logout') {
                     <div class="col-span-3 bg-white p-4 rounded-xl shadow-sm border">
                         <h4 class="font-semibold text-slate-600 text-sm uppercase tracking-wider mb-4">History & Comments</h4>
                         <div id="modalComments" class="space-y-4 max-h-48 overflow-y-auto pr-2"></div>
-                        <form id="modalCommentForm" class="mt-4 flex items-start gap-3">
+                        <form id="modalCommentForm" class="mt-4" enctype="multipart/form-data">
                             <input type="hidden" name="action" value="add_comment_ajax">
                             <input type="hidden" id="modalCommentIssueId" name="issue_id">
-                            <textarea name="comment" class="flex-grow p-3 border border-slate-300 rounded-lg text-sm" rows="1" placeholder="Add a comment..."></textarea>
-                            <button type="submit" class="px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">Post</button>
+                            <textarea name="comment" class="w-full p-3 border border-slate-300 rounded-lg text-sm" rows="2" placeholder="Add a comment..."></textarea>
+                            <div class="mt-2">
+                                <label for="comment-attachments" class="text-sm font-medium text-indigo-600 cursor-pointer hover:text-indigo-800">
+                                    + Add Attachment
+                                </label>
+                                <input type="file" name="attachments[]" id="comment-attachments" class="sr-only" multiple accept="image/png, image/jpeg, image/gif">
+                            </div>
+                            <div id="comment-attachment-previews" class="mt-2 flex flex-wrap gap-2"></div>
+                            <div class="text-right mt-2">
+                                <button type="submit" class="px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">Post</button>
+                            </div>
                         </form>
                     </div>
                 </div>
@@ -1259,7 +1177,6 @@ document.addEventListener('DOMContentLoaded', function() {
         modalCondition.innerHTML = '';
         modalCondition.appendChild(conditionSpan);
         
-        // Image Grid Logic
         const attachmentBox = document.getElementById('attachment-bento-box');
         const imageGrid = document.getElementById('image-grid');
         imageGrid.innerHTML = '';
@@ -1318,21 +1235,37 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const addCommentToUI = (commentData) => {
         const commentsContainer = document.getElementById('modalComments');
-        const noCommentsEl = commentsContainer.querySelector('p');
+        const noCommentsEl = commentsContainer.querySelector('p.text-center');
         if (noCommentsEl) noCommentsEl.remove();
 
         const commentEl = document.createElement('div');
         commentEl.className = 'text-sm flex gap-3 items-start';
-        const isPIC = commentData.created_by === 'PIC';
-        const authorInitial = commentData.author_display.charAt(0).toUpperCase();
         
+        const authorInitial = commentData.author_display.charAt(0).toUpperCase();
+        const createdDate = new Date(commentData.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
+
+        let attachmentsHTML = '';
+        if (commentData.attachments) {
+            try {
+                const attachments = JSON.parse(commentData.attachments);
+                if (Array.isArray(attachments) && attachments.length > 0) {
+                    attachmentsHTML += '<div class="mt-2 flex flex-wrap gap-2">';
+                    attachments.forEach(path => {
+                         attachmentsHTML += `<a href="${path}" target="_blank"><img src="${path}" class="w-20 h-20 object-cover rounded-md border"></a>`;
+                    });
+                    attachmentsHTML += '</div>';
+                }
+            } catch (e) { /* Invalid JSON */ }
+        }
+
         commentEl.innerHTML = `
-            <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white font-bold ${isPIC ? 'bg-blue-500' : 'bg-green-500'}">
+            <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white font-bold bg-slate-500">
                 ${authorInitial}
             </div>
-            <div class="flex-grow p-3 rounded-lg ${isPIC ? 'bg-blue-50' : 'bg-green-50'}">
-                <p class="font-semibold text-slate-800">${commentData.author_display} <span class="text-xs text-slate-500 font-normal ml-2">${new Date(commentData.created_at).toLocaleString()}</span></p>
+            <div class="flex-grow p-3 rounded-lg bg-slate-50 border">
+                <p class="font-semibold text-slate-800">${commentData.author_display} <span class="text-xs text-slate-500 font-normal ml-2">${createdDate}</span></p>
                 <p class="mt-1 text-slate-700">${commentData.notes.replace(/\n/g, '<br>')}</p>
+                ${attachmentsHTML}
             </div>`;
         commentsContainer.appendChild(commentEl);
         commentsContainer.scrollTop = commentsContainer.scrollHeight;
@@ -1344,7 +1277,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = new FormData(this);
         const submitButton = this.querySelector('button[type="submit"]');
         submitButton.disabled = true;
-        submitButton.textContent = '...';
+        submitButton.textContent = 'Posting...';
 
         fetch('?page=dashboard', {
             method: 'POST',
@@ -1354,13 +1287,17 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(data => {
             if (data.success) {
                 addCommentToUI(data.comment);
-                this.querySelector('textarea').value = '';
+                this.reset();
+                document.getElementById('comment-attachment-previews').innerHTML = '';
                 const issueId = formData.get('issue_id');
                 const card = document.querySelector(`.kanban-card[data-issue*='"id":"${issueId}"']`);
                 if(card) {
-                    const currentData = JSON.parse(card.dataset.issue.replace(/'/g, '"'));
-                    currentData.updates.push(data.comment);
-                    card.dataset.issue = JSON.stringify(currentData).replace(/"/g, "'");
+                    try {
+                        const currentData = JSON.parse(card.dataset.issue.replace(/'/g, '"'));
+                        if (!currentData.updates) currentData.updates = [];
+                        currentData.updates.push(data.comment);
+                        card.dataset.issue = JSON.stringify(currentData).replace(/"/g, "'");
+                    } catch (e) { console.error('Failed to update card data', e); }
                 }
             } else {
                 alert(data.message || 'Failed to post comment.');
@@ -1375,10 +1312,29 @@ document.addEventListener('DOMContentLoaded', function() {
             submitButton.textContent = 'Post';
         });
     });
+    
+    const commentAttachmentInput = document.getElementById('comment-attachments');
+    const commentAttachmentPreviews = document.getElementById('comment-attachment-previews');
+    if(commentAttachmentInput) {
+        commentAttachmentInput.addEventListener('change', function(e) {
+            commentAttachmentPreviews.innerHTML = '';
+            Array.from(e.target.files).forEach(file => {
+                if(file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const img = document.createElement('img');
+                        img.src = event.target.result;
+                        img.className = 'w-16 h-16 object-cover rounded-md border';
+                        commentAttachmentPreviews.appendChild(img);
+                    }
+                    reader.readAsDataURL(file);
+                }
+            });
+        });
+    }
 
     document.querySelectorAll('.kanban-card').forEach(card => card.addEventListener('click', function() { openModal(this.dataset.issue); }));
     
-    // Drag and Drop Logic
     const uploadContainer = document.getElementById('image-upload-container');
     const imageInput = document.getElementById('images');
     const imagePrompt = document.getElementById('image-prompt');
@@ -1536,9 +1492,31 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '</ol>';
         return html;
      };
+
+    const pageAttachmentInput = document.getElementById('comment-attachments-page');
+    const pageAttachmentPreviews = document.getElementById('comment-attachment-previews-page');
+    if(pageAttachmentInput) {
+        pageAttachmentInput.addEventListener('change', function(e) {
+            pageAttachmentPreviews.innerHTML = '';
+            Array.from(e.target.files).forEach(file => {
+                if(file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const previewContainer = document.createElement('div');
+                        previewContainer.className = 'relative';
+                        const img = document.createElement('img');
+                        img.src = event.target.result;
+                        img.className = 'w-20 h-20 object-cover rounded-md border';
+                        previewContainer.appendChild(img);
+                        pageAttachmentPreviews.appendChild(previewContainer);
+                    }
+                    reader.readAsDataURL(file);
+                }
+            });
+        });
+    }
 });
 </script>
 
 </body>
 </html>
-

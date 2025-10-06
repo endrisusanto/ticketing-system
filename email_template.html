@@ -5,102 +5,74 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{header_title}}</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-        body { margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; }
-        p { Margin: 0; }
-        .h1 { font-size: 24px; font-weight: 700; Margin-bottom: 24px; }
-        .h2 { font-size: 16px; font-weight: 600; Margin: 0 0 16px; color: #1e293b; }
-        .bento-box { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background-color: #f1f5f9; color: #334155; }
+        .wrapper { width: 100%; table-layout: fixed; }
+        .main { margin: 0 auto; width: 100%; max-width: 600px; border-spacing: 0; }
+        .header { background-color: {{theme_color}}; color: #ffffff; padding: 32px; border-radius: 16px 16px 0 0; text-align: center; }
+        .content-shell { background-color: #ffffff; padding: 24px; border-radius: 0 0 16px 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05); }
+        .h1 { font-size: 26px; font-weight: 700; margin: 0 0_8px; color: #ffffff; line-height: 1.2; }
+        .h2 { font-size: 14px; font-weight: 600; margin: 0 0 12px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px; }
+        .text-sm { font-size: 14px; line-height: 1.6; }
+        .text-xs { font-size: 12px; }
+        .font-semibold { font-weight: 600; }
+        .uppercase { text-transform: uppercase; }
+        .text-light { color: {{theme_color_light}}; opacity: 0.9; }
+        .tag { display: inline-block; padding: 4px 12px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+        .card { border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; }
+        .breadcrumb-wrapper { background-color: #f8fafc; padding: 12px; border-radius: 12px; }
+        .bubble { border-radius: 12px; padding: 12px; margin-bottom: 8px; }
+        .bubble p { margin: 0; }
     </style>
 </head>
 <body>
     <div style="display:none;font-size:1px;color:#333333;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">{{preheader}}</div>
-    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9;">
-        <tr>
-            <td align="center">
-                <table width="600" style="max-width: 600px; border-spacing: 0;" border="0" cellspacing="0" cellpadding="0">
-                    <tr>
-                        <td style="padding: 24px;">
-                            <table width="100%" style="border-spacing: 0;">
-                                <!-- Header -->
-                                <tr>
-                                    <td style="background-color: {{theme_color}}; border-radius: 12px; padding: 24px; text-align: center; color: #fff;">
-                                        <div style="margin-bottom: 16px;">
-                                            <img src="cid:alert_icon" alt="Alert" style="max-width: 48px; height: auto; border: 0;">
-                                        </div>
-                                        <p class="h1" style="font-size: 24px; font-weight: 700; margin: 0;">{{header_title}}</p>
-                                    </td>
-                                </tr>
+    <center class="wrapper" style="padding: 24px;">
+        <table class="main" width="100%">
+            <tr><td class="header"><h1 class="h1">{{header_title}}</h1><p class="text-sm text-light">{{issue_title}}</p></td></tr>
+            <tr>
+                <td class="content-shell">
+                    <table width="100%" class="breadcrumb-wrapper"><tr><td>{{breadcrumb_html}}</td></tr></table>
 
-                                <tr><td style="height: 16px;"></td></tr>
+                    <table width="100%" style="border-spacing: 0; padding-top: 24px;">
+                        <tr>
+                            <td width="35%" valign="top" style="padding-right: 8px;">
+                                <table width="100%" class="card" style="background-color: #f8fafc; height: 100%;">
+                                    <tr>
+                                        <td valign="top">
+                                            <p class="h2">Details</p>
+                                            <p class="text-xs uppercase font-semibold" style="color:#64748b; margin:0;">Drafter</p>
+                                            <p class="text-sm font-semibold" style="color:#1e293b; margin:4px 0 16px;">{{drafter_name}}</p>
+                                            
+                                            <p class="text-xs uppercase font-semibold" style="color:#64748b; margin:0;">Location</p>
+                                            <p class="text-sm font-semibold" style="color:#1e293b; margin:4px 0 16px;">{{location}}</p>
+                                            
+                                            <p class="text-xs uppercase font-semibold" style="color:#64748b; margin:0;">Urgency</p>
+                                            <div style="margin-top:4px;"><span class="tag" style="background-color:{{theme_color_light}}; color:{{theme_color}};">{{urgency_level}}</span></div>
+                                        </td>
+                                    </tr>
+                                </table>
+                            </td>
+                            <td width="65%" valign="top" style="padding-left: 8px;">
+                                <table width="100%" style="border-spacing: 0;">
+                                    <tr><td class="card" style="background-color: #f8fafc;"><p class="h2">Description</p><p class="text-sm">{{main_description}}</p></td></tr>
+                                    {{attachment_block}}
+                                </table>
+                            </td>
+                        </tr>
+                    </table>
+                    
+                    <table width="100%" style="border-spacing: 0; margin-top: 16px;">
+                        <tr><td class="card" style="background-color: #f8fafc;"><p class="h2">History & Comments</p>{{history_block}}</td></tr>
+                    </table>
 
-                                <!-- Bento Grid -->
-                                <tr>
-                                    <td>
-                                        <table style="width: 100%; border-spacing: 0;">
-                                            <tr>
-                                                <!-- Left Column -->
-                                                <td style="width: 35%; padding-right: 8px;" valign="top">
-                                                    <table style="width: 100%; border-spacing: 0;">
-                                                        <tr><td class="bento-box" style="margin-bottom: 16px;">
-                                                            <p style="color: #64748b; font-size: 12px; font-weight: 600; text-transform: uppercase;">Reported By</p>
-                                                            <p style="color: #1e293b; font-size: 14px; font-weight: 600; margin-top: 4px;">{{reported_by}}</p>
-                                                        </td></tr>
-                                                        <tr><td style="height: 16px;"></td></tr>
-                                                        <tr><td class="bento-box">
-                                                            <p style="color: #64748b; font-size: 12px; font-weight: 600; text-transform: uppercase;">Level Urgensi</p>
-                                                            <p style="color: #1e293b; font-size: 14px; font-weight: 600; margin-top: 4px;">{{urgency_level}}</p>
-                                                            <p style="color: #64748b; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-top: 12px;">Location</p>
-                                                            <p style="color: #1e293b; font-size: 14px; font-weight: 600; margin-top: 4px;">{{location}}</p>
-                                                        </td></tr>
-                                                    </table>
-                                                </td>
-                                                <!-- Right Column -->
-                                                <td style="width: 65%; padding-left: 8px;" valign="top">
-                                                    <table style="width: 100%; border-spacing: 0;">
-                                                        <tr><td class="bento-box"><p class="h2">{{issue_title}}</p><p style="color: #475569; line-height: 1.6;">{{main_description}}</p></td></tr>
-                                                        <tr><td style="height: 16px;"></td></tr>
-                                                        <tr><td class="bento-box"><p class="h2">Attachments</p>{{image_block}}</td></tr>
-                                                    </table>
-                                                </td>
-                                            </tr>
-                                        </table>
-                                    </td>
-                                </tr>
-                                
-                                <tr><td style="height: 16px;"></td></tr>
-                                
-                                 <!-- History -->
-                                <tr>
-                                    <td class="bento-box">
-                                        <p class="h2">History & Comments</p>
-                                        <div style="color: #475569; line-height: 1.6;">{{history_block}}</div>
-                                    </td>
-                                </tr>
-                                
-                                <tr><td style="height: 16px;"></td></tr>
-
-                                <!-- CTA -->
-                                <tr>
-                                    <td style="background-color: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; text-align: center;">
-                                        <p style="color: #475569; margin-bottom: 16px;">Please review the ticket and take the necessary action.</p>
-                                        <a href="{{cta_link}}" style="background-color: {{theme_color}}; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block;">{{cta_text}}</a>
-                                    </td>
-                                </tr>
-
-                                <!-- Footer -->
-                                 <tr>
-                                    <td style="padding: 24px; text-align: center; font-size: 12px; color: #94a3b8;">
-                                        &copy; <?php echo date('Y'); ?> Issue Ticket System. All rights reserved.
-                                    </td>
-                                </tr>
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </td>
-        </tr>
-    </table>
+                    <table width="100%" style="border-spacing: 0; margin-top: 32px;">
+                        <tr><td style="text-align: center;"><a href="{{cta_link}}" style="background-color: {{theme_color}}; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block;">{{cta_text}}</a></td></tr>
+                    </table>
+                </td>
+            </tr>
+            <tr><td style="padding-top: 32px; text-align: center;"><p class="text-xs" style="color: #94a3b8;">&copy; <?php echo date('Y'); ?> Issue Ticket System. All rights reserved.</p></td></tr>
+        </table>
+    </center>
 </body>
 </html>
-
