@@ -140,6 +140,7 @@ if (!function_exists('send_notification_email')) {
             $common_replacements = [
                 '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
                 '{{drafter_name}}' => htmlspecialchars($issue['drafter_name']),
+                '{{pic_emails}}' => htmlspecialchars($issue['pic_emails']),
                 '{{issue_title}}' => htmlspecialchars($issue['title']),
                 '{{urgency_level}}' => htmlspecialchars($issue['condition']),
                 '{{location}}' => htmlspecialchars($issue['location']),
@@ -248,6 +249,23 @@ if ($action) {
             $_SESSION['flash']['success'] = 'If an account with that email exists, a temporary password has been sent.';
             redirect('?page=login');
             break;
+        case 'change_username':
+            if (!is_logged_in()) redirect('?page=login');
+            $new_name = trim($_POST['name']);
+
+            if (empty($new_name)) {
+                $_SESSION['flash']['error'] = 'Name cannot be empty.';
+            } else {
+                try {
+                    $stmt = $pdo->prepare("UPDATE users SET name = ? WHERE id = ?");
+                    $stmt->execute([$new_name, $user['id']]);
+                    $_SESSION['flash']['success'] = 'Name changed successfully.';
+                } catch (PDOException $e) {
+                    $_SESSION['flash']['error'] = 'Failed to change name. Please try again.';
+                }
+            }
+            redirect('?page=profile');
+            break;    
 
         case 'change_password':
             if (!is_logged_in()) redirect('?page=login');
@@ -678,7 +696,19 @@ if ($page === 'logout') {
                             <p class="text-slate-500 mt-1">Manage your account settings.</p>
                         </header>
                         <div class="bg-white p-8 rounded-2xl shadow-md">
-                             <h2 class="text-xl font-bold text-slate-800 mb-6">Change Password</h2>
+                             <h2 class="text-xl font-bold text-slate-800 mb-6">Update Profile</h2>
+                             <form action="?page=profile" method="POST" class="space-y-4 mb-8 border-b pb-8">
+                                <input type="hidden" name="action" value="change_username">
+                                <div>
+                                    <label for="name" class="block text-sm font-medium text-slate-700">Full Name</label>
+                                    <input type="text" name="name" id="name" class="mt-1 block w-full rounded-lg py-2 px-3 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 form-input" value="<?php echo htmlspecialchars($user['name']); ?>" required>
+                                </div>
+                                <div class="pt-2">
+                                    <button type="submit" class="inline-flex justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 transition-colors">Update Name</button>
+                                </div>
+                             </form>
+
+                             <h2 class="text-xl font-bold text-slate-800 mb-6 mt-8">Change Password</h2>
                              <form action="?page=profile" method="POST" class="space-y-4">
                                 <input type="hidden" name="action" value="change_password">
                                 <div>
@@ -700,111 +730,141 @@ if ($page === 'logout') {
                         </div>
                     <?php
                         break;
-                    case 'dashboard':
-                        if (!is_logged_in()) redirect('?page=login');
-                        
-                        $current_view = $_GET['view'] ?? 'kanban';
-                        
-                        $user_email_like = '%' . $user['email'] . '%';
-                        $stmt_issues = $pdo->prepare("SELECT i.*, u.email as drafter_email FROM issues i JOIN users u ON i.drafter_id = u.id WHERE i.drafter_id = ? OR i.pic_emails LIKE ? OR i.cc_emails LIKE ? OR i.bcc_emails LIKE ? ORDER BY i.created_at DESC");
-                        $stmt_issues->execute([$user['id'], $user_email_like, $user_email_like, $user_email_like]);
-                        $issues = $stmt_issues->fetchAll(PDO::FETCH_ASSOC);
+                   case 'dashboard':
+    if (!is_logged_in()) redirect('?page=login');
 
-                        $issue_ids = array_column($issues, 'id');
-                        $updates_by_issue = [];
-                        if (!empty($issue_ids)) {
-                            $in_placeholders = implode(',', array_fill(0, count($issue_ids), '?'));
-                            $stmt_updates = $pdo->prepare("SELECT * FROM issue_updates WHERE issue_id IN ($in_placeholders) ORDER BY created_at ASC");
-                            $stmt_updates->execute($issue_ids);
-                            while ($update = $stmt_updates->fetch(PDO::FETCH_ASSOC)) {
-                                $updates_by_issue[$update['issue_id']][] = $update;
-                            }
-                        }
+    $current_view = $_GET['view'] ?? 'kanban';
 
-                        $issues_with_updates = [];
-                        foreach ($issues as $issue) {
-                            $augmented_updates = [];
-                            $updates = $updates_by_issue[$issue['id']] ?? [];
-                            foreach($updates as $update) {
-                                $update['author_display'] = $update['created_by'];
-                                $augmented_updates[] = $update;
-                            }
-                            $issue['updates'] = $augmented_updates;
-                            $issues_with_updates[] = $issue;
-                        }
+    function get_status_class($status) {
+        switch ($status) {
+            case 'Open': return 'bg-blue-100 text-blue-800';
+            case 'In Progress': return 'bg-yellow-100 text-yellow-800';
+            case 'Resolved': return 'bg-green-100 text-green-800';
+            case 'Closed': return 'bg-gray-100 text-gray-800';
+            default: return 'bg-slate-100 text-slate-800';
+        }
+    }
 
-                    ?>
-                        <header class="mb-8">
-                            <div class="flex justify-between items-center">
-                                <h1 class="text-3xl font-bold tracking-tight text-slate-900">Dashboard</h1>
-                                <div class="flex items-center gap-2 p-1 bg-slate-200 rounded-lg">
-                                    <a href="?page=dashboard&view=kanban" class="<?php echo $current_view === 'kanban' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600'; ?> rounded-md px-3 py-1.5 text-sm font-medium transition-colors">Kanban</a>
-                                    <a href="?page=dashboard&view=table" class="<?php echo $current_view === 'table' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600'; ?> rounded-md px-3 py-1.5 text-sm font-medium transition-colors">Table</a>
-                                </div>
-                            </div>
-                        </header>
-                        <div>
-                            <?php if($current_view === 'kanban'):
-                                $issues_by_status = ['Open' => [], 'In Progress' => [], 'Resolved' => [], 'Closed' => []];
-                                foreach ($issues_with_updates as $issue) { $issues_by_status[$issue['status']][] = $issue; }
-                            ?>
-                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                <?php foreach ($issues_by_status as $status => $status_issues): ?>
-                                <div class="bg-slate-100/70 rounded-xl p-4">
-                                    <h3 class="font-semibold text-md mb-4 text-slate-800 px-2 flex justify-between">
-                                        <span><?php echo $status; ?></span>
-                                        <span class="text-slate-400"><?php echo count($status_issues); ?></span>
-                                    </h3>
-                                    <div class="space-y-4 kanban-column">
-                                        <?php foreach ($status_issues as $issue): ?>
-                                        <div class="bg-white p-4 rounded-lg shadow-sm cursor-pointer kanban-card condition-border-<?php echo str_replace(' ', '', $issue['condition']); ?>" data-issue='<?php echo json_encode($issue, JSON_HEX_APOS | JSON_HEX_QUOT); ?>'>
-                                            <?php 
-                                                $images = !empty($issue['image_paths']) ? json_decode($issue['image_paths'], true) : [];
-                                                if (!empty($images) && file_exists($images[0])): 
-                                            ?>
-                                                <img src="<?php echo htmlspecialchars($images[0]); ?>" alt="Preview" class="w-full h-32 object-cover rounded-md mb-3">
-                                            <?php endif; ?>
-                                            <h4 class="font-semibold text-slate-800"><?php echo htmlspecialchars($issue['title']); ?></h4>
-                                            <p class="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
-                                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-                                                <?php echo htmlspecialchars($issue['location']); ?>
-                                            </p>
-                                            <p class="text-xs text-slate-400 mt-3 pt-3 border-t">To: <?php echo htmlspecialchars($issue['pic_emails']); ?></p>
-                                        </div>
-                                        <?php endforeach; ?>
-                                    </div>
-                                </div>
-                                <?php endforeach; ?>
-                            </div>
-                            <?php else: ?>
-                            <div class="overflow-x-auto bg-white rounded-xl shadow-md">
-                                 <table class="min-w-full">
-                                    <thead class="bg-slate-50">
-                                        <tr>
-                                            <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Title</th>
-                                            <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">PIC</th>
-                                            <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                                            <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Level Urgensi</th>
-                                            <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Created</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody class="divide-y divide-slate-200">
-                                        <?php foreach ($issues_with_updates as $issue): ?>
-                                        <tr class="hover:bg-slate-50 cursor-pointer kanban-card" data-issue='<?php echo json_encode($issue, JSON_HEX_APOS | JSON_HEX_QUOT); ?>'>
-                                            <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm font-medium text-slate-900"><?php echo htmlspecialchars($issue['title']); ?></div><div class="text-sm text-slate-500"><?php echo htmlspecialchars($issue['location']); ?></div></td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><?php echo htmlspecialchars($issue['pic_emails']); ?></td>
-                                            <td class="px-6 py-4 whitespace-nowrap"><span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800"><?php echo htmlspecialchars($issue['status']); ?></span></td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><?php echo htmlspecialchars($issue['condition']); ?></td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><?php echo date('d M Y, H:i', strtotime($issue['created_at'])); ?></td>
-                                        </tr>
-                                        <?php endforeach; ?>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <?php endif; ?>
-                        </div>
-                    <?php
-                        break;
+    function get_condition_class_table($condition) {
+        switch ($condition) {
+            case 'Urgent': return 'bg-red-100 text-red-800';
+            case 'High': return 'bg-orange-100 text-orange-800';
+            case 'Normal': return 'bg-sky-100 text-sky-800';
+            case 'Low': return 'bg-emerald-100 text-emerald-800';
+            default: return 'bg-slate-100 text-slate-800';
+        }
+    }
+
+    $user_email_like = '%' . $user['email'] . '%';
+    $stmt_issues = $pdo->prepare("SELECT i.*, u.name as drafter_name, u.email as drafter_email FROM issues i JOIN users u ON i.drafter_id = u.id WHERE i.drafter_id = ? OR i.pic_emails LIKE ? OR i.cc_emails LIKE ? OR i.bcc_emails LIKE ? ORDER BY i.created_at DESC");
+    $stmt_issues->execute([$user['id'], $user_email_like, $user_email_like, $user_email_like]);
+    $issues = $stmt_issues->fetchAll(PDO::FETCH_ASSOC);
+
+    $issue_ids = array_column($issues, 'id');
+    $updates_by_issue = [];
+    if (!empty($issue_ids)) {
+        $in_placeholders = implode(',', array_fill(0, count($issue_ids), '?'));
+        $stmt_updates = $pdo->prepare("SELECT * FROM issue_updates WHERE issue_id IN ($in_placeholders) ORDER BY created_at ASC");
+        $stmt_updates->execute($issue_ids);
+        while ($update = $stmt_updates->fetch(PDO::FETCH_ASSOC)) {
+            $updates_by_issue[$update['issue_id']][] = $update;
+        }
+    }
+
+    $issues_with_updates = [];
+    foreach ($issues as $issue) {
+        $augmented_updates = [];
+        $updates = $updates_by_issue[$issue['id']] ?? [];
+        foreach($updates as $update) {
+            $update['author_display'] = $update['created_by'];
+            $augmented_updates[] = $update;
+        }
+        $issue['updates'] = $augmented_updates;
+        $issues_with_updates[] = $issue;
+    }
+
+?>
+    <header class="mb-8">
+        <div class="flex justify-between items-center">
+            <h1 class="text-3xl font-bold tracking-tight text-slate-900">Dashboard</h1>
+            <div class="flex items-center gap-2 p-1 bg-slate-200 rounded-lg">
+                <a href="?page=dashboard&view=kanban" class="<?php echo $current_view === 'kanban' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600'; ?> rounded-md px-3 py-1.5 text-sm font-medium transition-colors">Kanban</a>
+                <a href="?page=dashboard&view=table" class="<?php echo $current_view === 'table' ? 'bg-white text-indigo-600 shadow' : 'text-slate-600'; ?> rounded-md px-3 py-1.5 text-sm font-medium transition-colors">Table</a>
+            </div>
+        </div>
+    </header>
+    <div>
+        <?php if($current_view === 'kanban'):
+            $issues_by_status = ['Open' => [], 'In Progress' => [], 'Resolved' => [], 'Closed' => []];
+            foreach ($issues_with_updates as $issue) { $issues_by_status[$issue['status']][] = $issue; }
+        ?>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <?php foreach ($issues_by_status as $status => $status_issues): ?>
+            <div class="bg-slate-100/70 rounded-xl p-4">
+                <h3 class="font-semibold text-md mb-4 text-slate-800 px-2 flex justify-between">
+                    <span><?php echo $status; ?></span>
+                    <span class="text-slate-400"><?php echo count($status_issues); ?></span>
+                </h3>
+                <div class="space-y-4 kanban-column">
+                    <?php foreach ($status_issues as $issue): ?>
+                    <div class="bg-white p-4 rounded-lg shadow-sm cursor-pointer kanban-card condition-border-<?php echo str_replace(' ', '', $issue['condition']); ?>" data-issue='<?php echo json_encode($issue, JSON_HEX_APOS | JSON_HEX_QUOT); ?>'>
+                        <?php 
+                            $images = !empty($issue['image_paths']) ? json_decode($issue['image_paths'], true) : [];
+                            if (!empty($images) && file_exists($images[0])): 
+                        ?>
+                            <img src="<?php echo htmlspecialchars($images[0]); ?>" alt="Preview" class="w-full h-32 object-cover rounded-md mb-3">
+                        <?php endif; ?>
+                        <h4 class="font-semibold text-slate-800"><?php echo htmlspecialchars($issue['title']); ?></h4>
+                        <p class="text-sm text-slate-500 mt-1 flex items-center gap-1.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+                            <?php echo htmlspecialchars($issue['location']); ?>
+                        </p>
+                        <p class="text-xs text-slate-400 mt-3 pt-3 border-t">To: <?php echo htmlspecialchars($issue['pic_emails']); ?></p>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php else: ?>
+        <div class="overflow-x-auto bg-white rounded-xl shadow-md">
+             <table class="min-w-full">
+                <thead class="bg-slate-50">
+                    <tr>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Title</th>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Drafter</th>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">PIC</th>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Level Urgensi</th>
+                        <th scope="col" class="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Created</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                    <?php foreach ($issues_with_updates as $issue): ?>
+                    <tr class="hover:bg-slate-50 cursor-pointer kanban-card" data-issue='<?php echo json_encode($issue, JSON_HEX_APOS | JSON_HEX_QUOT); ?>'>
+                        <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm font-medium text-slate-900"><?php echo htmlspecialchars($issue['title']); ?></div><div class="text-sm text-slate-500"><?php echo htmlspecialchars($issue['location']); ?></div></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><?php echo htmlspecialchars($issue['drafter_name']); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><?php echo htmlspecialchars($issue['pic_emails']); ?></td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo get_status_class($issue['status']); ?>">
+                                <?php echo htmlspecialchars($issue['status']); ?>
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                             <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo get_condition_class_table($issue['condition']); ?>">
+                                <?php echo htmlspecialchars($issue['condition']); ?>
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><?php echo date('d M Y, H:i', strtotime($issue['created_at'])); ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+        <?php endif; ?>
+    </div>
+<?php
+    break;
                     case 'create_ticket':
                     ?>
                         <header class="mb-8">
