@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{header_title}}</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { margin: 0; padding: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; }
+        p { Margin: 0; }
+        .h1 { font-size: 24px; font-weight: 700; Margin-bottom: 24px; }
+        .h2 { font-size: 16px; font-weight: 600; Margin: 0 0 16px; color: #1e293b; }
+        .bento-box { background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; }
+    </style>
+</head>
+<body>
+    <div style="display:none;font-size:1px;color:#333333;line-height:1px;max-height:0px;max-width:0px;opacity:0;overflow:hidden;">{{preheader}}</div>
+    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9;">
+        <tr>
+            <td align="center">
+                <table width="600" style="max-width: 600px; border-spacing: 0;" border="0" cellspacing="0" cellpadding="0">
+                    <tr>
+                        <td style="padding: 24px;">
+                            <table width="100%" style="border-spacing: 0;">
+                                <!-- Header -->
+                                <tr>
+                                    <td style="background-color: {{theme_color}}; border-radius: 12px; padding: 24px; text-align: center; color: #fff;">
+                                        <div style="margin-bottom: 16px;">
+                                            <img src="cid:alert_icon" alt="Alert" style="max-width: 48px; height: auto; border: 0;">
+                                        </div>
+                                        <p class="h1" style="font-size: 24px; font-weight: 700; margin: 0;">{{header_title}}</p>
+                                    </td>
+                                </tr>
+
+                                <tr><td style="height: 16px;"></td></tr>
+
+                                <!-- Bento Grid -->
+                                <tr>
+                                    <td>
+                                        <table style="width: 100%; border-spacing: 0;">
+                                            <tr>
+                                                <!-- Left Column -->
+                                                <td style="width: 35%; padding-right: 8px;" valign="top">
+                                                    <table style="width: 100%; border-spacing: 0;">
+                                                        <tr><td class="bento-box" style="margin-bottom: 16px;">
+                                                            <p style="color: #64748b; font-size: 12px; font-weight: 600; text-transform: uppercase;">Reported By</p>
+                                                            <p style="color: #1e293b; font-size: 14px; font-weight: 600; margin-top: 4px;">{{reported_by}}</p>
+                                                        </td></tr>
+                                                        <tr><td style="height: 16px;"></td></tr>
+                                                        <tr><td class="bento-box">
+                                                            <p style="color: #64748b; font-size: 12px; font-weight: 600; text-transform: uppercase;">Level Urgensi</p>
+                                                            <p style="color: #1e293b; font-size: 14px; font-weight: 600; margin-top: 4px;">{{urgency_level}}</p>
+                                                            <p style="color: #64748b; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-top: 12px;">Location</p>
+                                                            <p style="color: #1e293b; font-size: 14px; font-weight: 600; margin-top: 4px;">{{location}}</p>
+                                                        </td></tr>
+                                                    </table>
+                                                </td>
+                                                <!-- Right Column -->
+                                                <td style="width: 65%; padding-left: 8px;" valign="top">
+                                                    <table style="width: 100%; border-spacing: 0;">
+                                                        <tr><td class="bento-box"><p class="h2">{{issue_title}}</p><p style="color: #475569; line-height: 1.6;">{{main_description}}</p></td></tr>
+                                                        <tr><td style="height: 16px;"></td></tr>
+                                                        <tr><td class="bento-box"><p class="h2">Attachments</p>{{image_block}}</td></tr>
+                                                    </table>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                
+                                <tr><td style="height: 16px;"></td></tr>
+                                
+                                 <!-- History -->
+                                <tr>
+                                    <td class="bento-box">
+                                        <p class="h2">History & Comments</p>
+                                        <div style="color: #475569; line-height: 1.6;">{{history_block}}</div>
+                                    </td>
+                                </tr>
+                                
+                                <tr><td style="height: 16px;"></td></tr>
+
+                                <!-- CTA -->
+                                <tr>
+                                    <td style="background-color: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 24px; text-align: center;">
+                                        <p style="color: #475569; margin-bottom: 16px;">Please review the ticket and take the necessary action.</p>
+                                        <a href="{{cta_link}}" style="background-color: {{theme_color}}; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block;">{{cta_text}}</a>
+                                    </td>
+                                </tr>
+
+                                <!-- Footer -->
+                                 <tr>
+                                    <td style="padding: 24px; text-align: center; font-size: 12px; color: #94a3b8;">
+                                        &copy; <?php echo date('Y'); ?> Issue Ticket System. All rights reserved.
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>
+
