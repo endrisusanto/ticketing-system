@@ -111,7 +111,7 @@ if (!function_exists('send_notification_email')) {
                 }
                 
                 $history_html .= '<div class="bubble" style="background-color: #eef2ff;">
-                                    <p style="font-size: 13px; font-weight: 600; color: #1e2B; margin: 0 0 4px;">'.$author_display.' <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">'.date('d M Y, H:i', strtotime($update['created_at'])).'</span></p>
+                                    <p style="font-size: 13px; font-weight: 600; color: #1e293b; margin: 0 0 4px;">'.$author_display.' <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">'.date('d M Y, H:i', strtotime($update['created_at'])).'</span></p>
                                     <p style="font-size: 14px; color: #334155; margin: 0;">'.nl2br(htmlspecialchars($update['notes'])).'</p>
                                     '.$attachments_comment_html.'
                                 </div>';
@@ -140,6 +140,7 @@ if (!function_exists('send_notification_email')) {
             $common_replacements = [
                 '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
                 '{{drafter_name}}' => htmlspecialchars($issue['drafter_name']),
+                '{{drafter_email}}' => htmlspecialchars($issue['drafter_email']), // <-- TAMBAHKAN BARIS INI
                 '{{pic_emails}}' => htmlspecialchars($issue['pic_emails']),
                 '{{issue_title}}' => htmlspecialchars($issue['title']),
                 '{{urgency_level}}' => htmlspecialchars($issue['condition']),
@@ -174,7 +175,78 @@ if (!function_exists('send_notification_email')) {
         return true;
     }
 }
+if (!function_exists('send_verification_email')) {
+    function send_verification_email($recipient_email, $token) {
+        $mail = new PHPMailer(true);
+        try {
+            // Pengaturan SMTP Server
+            $mail->isSMTP();
+            $mail->Host = SMTP_HOST;
+            $mail->SMTPAuth = true;
+            $mail->Username = SMTP_USER;
+            $mail->Password = SMTP_PASS;
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port = SMTP_PORT;
 
+            // Penerima
+            $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
+            $mail->addAddress($recipient_email);
+
+            // Konten Email
+            $verification_link = BASE_URL . '?page=verify&token=' . $token;
+            $mail->isHTML(true);
+            $mail->Subject = 'Verify Your Account - Issue Ticket System';
+
+            // Template Email Modern
+            $mail->Body    = '
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Verify Your Email</title>
+                <style>
+                    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap");
+                    body { margin: 0; padding: 0; font-family: "Inter", sans-serif; background-color: #f1f5f9; color: #334155; }
+                    .wrapper { width: 100%; table-layout: fixed; }
+                    .main { margin: 0 auto; width: 100%; max-width: 600px; border-spacing: 0; }
+                    .header { background-color: #4f46e5; color: #ffffff; padding: 32px; border-radius: 16px 16px 0 0; text-align: center; }
+                    .content-shell { background-color: #ffffff; padding: 32px; border-radius: 0 0 16px 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05); text-align: center; }
+                    .h1 { font-size: 26px; font-weight: 700; margin: 0; color: #ffffff; line-height: 1.2; }
+                    .text-md { font-size: 16px; line-height: 1.6; color: #475569; margin: 20px 0; }
+                    .button { background-color: #4f46e5; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block; }
+                    .footer { padding-top: 32px; text-align: center; }
+                    .footer p { font-size: 12px; color: #94a3b8; }
+                </style>
+            </head>
+            <body>
+                <center class="wrapper" style="padding: 24px;">
+                    <table class="main" width="100%">
+                        <tr><td class="header"><h1 class="h1">Almost there!</h1></td></tr>
+                        <tr>
+                            <td class="content-shell">
+                                <p class="text-md">Thank you for registering for the Issue Ticket System. Please click the button below to verify your email address and complete your registration.</p>
+                                <a href="' . $verification_link . '" class="button" style="color: #ffffff !important; text-decoration: none;">Verify Email Address</a>
+                                <p style="font-size: 12px; color: #94a3b8; margin-top: 24px;">If you did not create an account, no further action is required.</p>
+                            </td>
+                        </tr>
+                        <tr><td class="footer"><p>&copy; ' . date('Y') . ' Issue Ticket System. All rights reserved.</p></td></tr>
+                    </table>
+                </center>
+            </body>
+            </html>';
+
+            // Fallback untuk klien email non-HTML
+            $mail->AltBody = 'Please click the link to verify your account: ' . $verification_link;
+
+            $mail->send();
+            return true;
+        } catch (Exception $e) {
+            $_SESSION['flash']['error_detail'] = "Mailer Error: {$mail->ErrorInfo}";
+            return false;
+        }
+    }
+}
 // ============== LOGIKA & ROUTING APLIKASI ===============
 $page = $_GET['page'] ?? 'home';
 $action = $_POST['action'] ?? null;
@@ -182,6 +254,23 @@ $user = get_app_user($pdo);
 
 if ($action) {
     switch ($action) {
+        case 'resend_verification':
+            $email = $_POST['email'];
+            $stmt = $pdo->prepare("SELECT verification_token FROM users WHERE email = ? AND is_verified = 0");
+            $stmt->execute([$email]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if ($user && $user['verification_token']) {
+                if(send_verification_email($email, $user['verification_token'])) {
+                    $_SESSION['flash']['success'] = 'Verification email has been resent. Please check your inbox.';
+                } else {
+                    $_SESSION['flash']['error'] = 'Failed to resend verification email. Please try again later.';
+                }
+            } else {
+                $_SESSION['flash']['success'] = 'If an unverified account with that email exists, a verification link has been sent.';
+            }
+            redirect('?page=login');
+            break;
         case 'register':
             $name = $_POST['name'];
             $email = $_POST['email'];
@@ -193,11 +282,14 @@ if ($action) {
                 $stmt = $pdo->prepare("INSERT INTO users (name, email, password, verification_token) VALUES (?, ?, ?, ?)");
                 $stmt->execute([$name, $email, $hashed_password, $verification_token]);
                 
+                // === PERUBAHAN DI SINI ===
                 if (send_verification_email($email, $verification_token)) {
                      $_SESSION['flash']['success'] = 'Registration successful! Please check your email to verify your account.';
                 } else {
-                     $_SESSION['flash']['error'] = 'Registration successful, but failed to send verification email.';
+                     $_SESSION['flash']['error'] = 'Registration successful, but we failed to send a verification email. Please contact support.';
                 }
+                // =========================
+                
                 redirect('?page=login');
             } catch (PDOException $e) {
                 if ($e->errorInfo[1] == 1062) {
@@ -396,10 +488,12 @@ if ($action) {
             }
             $issue_id = $_POST['issue_id'];
             $comment = trim($_POST['comment']);
+            $new_status = $_POST['status'] ?? null; // Ambil status baru dari form
             $response = ['success' => false];
 
-            if (empty($comment) && (empty($_FILES['attachments']) || $_FILES['attachments']['error'][0] == UPLOAD_ERR_NO_FILE)) {
-                $response['message'] = 'Comment or attachment cannot be empty.';
+            // Validasi: Harus ada komentar atau lampiran atau perubahan status
+            if (empty($comment) && (empty($_FILES['attachments']) || $_FILES['attachments']['error'][0] == UPLOAD_ERR_NO_FILE) && !$new_status) {
+                $response['message'] = 'Comment, attachment, or status change is required.';
                 echo json_encode($response);
                 exit();
             }
@@ -411,44 +505,62 @@ if ($action) {
             if ($issue) {
                 $allowed_emails = array_merge(explode(',', $issue['pic_emails']), explode(',', $issue['cc_emails']), explode(',', $issue['bcc_emails']), [$issue['drafter_email']]);
                 $is_allowed = in_array($user['email'], array_map('trim', $allowed_emails));
+                $is_pic_or_drafter = in_array($user['email'], array_map('trim', explode(',', $issue['pic_emails']))) || $user['id'] == $issue['drafter_id'];
 
                 if ($is_allowed) {
                     try {
-                        $attachments = [];
-                        if (isset($_FILES['attachments']) && count($_FILES['attachments']['name']) > 0 && $_FILES['attachments']['name'][0] != '') {
-                             $target_dir = "uploads/";
-                             if (!is_dir($target_dir)) { mkdir($target_dir, 0755, true); }
-                             foreach($_FILES['attachments']['name'] as $key => $name) {
-                                 if ($_FILES['attachments']['error'][$key] == 0) {
-                                    $file_name = time() . '_' . uniqid() . '_' . basename($name);
-                                    $target_file = $target_dir . $file_name;
-                                    if (move_uploaded_file($_FILES['attachments']['tmp_name'][$key], $target_file)) {
-                                        $attachments[] = $target_file;
-                                    }
-                                 }
-                             }
+                        $pdo->beginTransaction();
+                        $email_needs_to_be_sent = false;
+
+                        // 1. Logika update status
+                        if ($is_pic_or_drafter && $new_status && $new_status !== $issue['status']) {
+                            $stmt_update = $pdo->prepare("UPDATE issues SET status = ? WHERE id = ?");
+                            $stmt_update->execute([$new_status, $issue_id]);
+                            $status_note = "Status changed from {$issue['status']} to {$new_status} by {$user['email']}";
+                            $stmt_log = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, is_status_change) VALUES (?, ?, ?, 1)");
+                            $stmt_log->execute([$issue_id, $status_note, $user['email']]);
+                            $email_needs_to_be_sent = true;
                         }
-                        $attachments_json = count($attachments) > 0 ? json_encode($attachments) : null;
-
-                        $stmt_insert = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, attachments) VALUES (?, ?, ?, ?)");
-                        $stmt_insert->execute([$issue_id, $comment, $user['email'], $attachments_json]);
-                        $last_id = $pdo->lastInsertId();
-
-                        send_notification_email($pdo, $issue_id, $last_id);
-
-                        $stmt_fetch = $pdo->prepare("SELECT * FROM issue_updates WHERE id = ?");
-                        $stmt_fetch->execute([$last_id]);
-                        $new_comment = $stmt_fetch->fetch(PDO::FETCH_ASSOC);
                         
-                        $new_comment['author_display'] = $user['email'];
+                        $last_id = null;
+                        // 2. Logika tambah komentar
+                        if (!empty($comment) || (!empty($_FILES['attachments']) && $_FILES['attachments']['error'][0] != UPLOAD_ERR_NO_FILE)) {
+                            $attachments = [];
+                            if (isset($_FILES['attachments']) && count($_FILES['attachments']['name']) > 0 && $_FILES['attachments']['name'][0] != '') {
+                                 $target_dir = "uploads/";
+                                 if (!is_dir($target_dir)) { mkdir($target_dir, 0755, true); }
+                                 foreach($_FILES['attachments']['name'] as $key => $name) {
+                                     if ($_FILES['attachments']['error'][$key] == 0) {
+                                        $file_name = time() . '_' . uniqid() . '_' . basename($name);
+                                        $target_file = $target_dir . $file_name;
+                                        if (move_uploaded_file($_FILES['attachments']['tmp_name'][$key], $target_file)) {
+                                            $attachments[] = $target_file;
+                                        }
+                                     }
+                                 }
+                            }
+                            $attachments_json = count($attachments) > 0 ? json_encode($attachments) : null;
+
+                            $stmt_insert = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, attachments) VALUES (?, ?, ?, ?)");
+                            $stmt_insert->execute([$issue_id, $comment, $user['email'], $attachments_json]);
+                            $last_id = $pdo->lastInsertId();
+                            $email_needs_to_be_sent = true;
+                        }
+                        
+                        $pdo->commit();
+                        
+                        if ($email_needs_to_be_sent) {
+                            send_notification_email($pdo, $issue_id, $last_id);
+                        }
 
                         $response['success'] = true;
-                        $response['comment'] = $new_comment;
+                        $response['reload'] = true; // Memberi tahu frontend untuk me-reload halaman
                      } catch (PDOException $e) {
+                        $pdo->rollBack();
                         $response['message'] = 'Database error: ' . $e->getMessage();
                      }
                 } else {
-                    $response['message'] = 'You are not authorized to comment on this ticket.';
+                    $response['message'] = 'You are not authorized to perform this action.';
                 }
             } else {
                  $response['message'] = 'Invalid operation. Issue not found.';
@@ -678,8 +790,20 @@ if ($page === 'logout') {
                                         <?php echo $page === 'login' ? 'Welcome Back!' : 'Create Your Account'; ?>
                                     </h2>
                                     <?php if ($page === 'login') { flash_message('success'); flash_message('error'); } ?>
+                                    
                                     <?php if (isset($error)): ?>
                                         <div class="p-3 mb-4 text-sm text-red-700 bg-red-100 rounded-lg" role="alert"><?php echo htmlspecialchars($error); ?></div>
+                                    <?php endif; ?>
+                                    
+                                    <?php if (isset($error) && strpos($error, 'not verified') !== false): ?>
+                                    <div class="mt-4 p-4 border-l-4 border-yellow-400 bg-yellow-50">
+                                        <form action="?page=login" method="POST" class="flex items-center gap-2">
+                                            <input type="hidden" name="action" value="resend_verification">
+                                            <input type="hidden" name="email" value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>">
+                                            <p class="text-sm text-yellow-700">Can't find the email?</p>
+                                            <button type="submit" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500">Resend verification link</button>
+                                        </form>
+                                    </div>
                                     <?php endif; ?>
                                     <form class="space-y-6" action="?page=<?php echo $page; ?>" method="POST">
                                         <input type="hidden" name="action" value="<?php echo $page; ?>">
@@ -834,7 +958,6 @@ if ($page === 'logout') {
                             }
                             $issue['updates'] = $augmented_updates;
                             
-                            // Menambahkan flag otorisasi untuk user saat ini
                             $issue['is_current_user_pic_or_drafter'] = in_array($user['email'], array_map('trim', explode(',', $issue['pic_emails']))) || $user['id'] == $issue['drafter_id'];
 
                             $issues_with_updates[] = $issue;
@@ -1093,6 +1216,11 @@ if ($page === 'logout') {
                                     <div class="col-span-3 md:col-span-1 row-span-2 bg-white p-4 rounded-xl shadow-sm border">
                                         <h4 class="font-semibold text-slate-600 text-sm uppercase tracking-wider">Details</h4>
                                         <dl class="mt-3 text-sm space-y-4">
+                                            <div>
+                                                <dt class="text-slate-500">Drafter</dt>
+                                                <dd class="text-slate-800 font-medium"><?php echo htmlspecialchars($issue['drafter_name']); ?></dd>
+                                                <dd class="text-slate-500 text-xs"><?php echo htmlspecialchars($issue['drafter_email']); ?></dd>
+                                            </div>
                                             <div><dt class="text-slate-500">Location</dt><dd class="text-slate-800 font-medium"><?php echo htmlspecialchars($issue['location']); ?></dd></div>
                                             <div><dt class="text-slate-500">Level Urgensi</dt><dd class="text-slate-800 font-medium"><?php echo htmlspecialchars($issue['condition']); ?></dd></div>
                                             <div><dt class="text-slate-500">PIC Email(s)</dt><dd class="text-slate-800 font-medium break-all"><?php echo htmlspecialchars(str_replace(',',', ',$issue['pic_emails'])); ?></dd></div>
@@ -1218,6 +1346,11 @@ if ($page === 'logout') {
                     <div class="col-span-3 md:col-span-1 row-span-2 bg-white p-4 rounded-xl shadow-sm border">
                         <h4 class="font-semibold text-slate-600 text-sm uppercase tracking-wider">Details</h4>
                         <dl class="mt-3 text-sm space-y-4">
+                            <div>
+                                <dt class="text-slate-500">Drafter</dt>
+                                <dd id="modalDrafterName" class="text-slate-800 font-medium"></dd>
+                                <dd id="modalDrafterEmail" class="text-slate-500 text-xs"></dd>
+                            </div>
                             <div><dt class="text-slate-500">Location</dt><dd id="modalLocation" class="text-slate-800 font-medium"></dd></div>
                             <div><dt class="text-slate-500">Level Urgensi</dt><dd id="modalCondition" class="text-slate-800 font-medium"></dd></div>
                             <div><dt class="text-slate-500">PIC Email(s)</dt><dd id="modalPicEmail" class="text-slate-800 font-medium break-all"></dd></div>
@@ -1234,30 +1367,26 @@ if ($page === 'logout') {
                          <div id="image-grid" class="mt-3 grid grid-cols-2 md:grid-cols-3 gap-4"></div>
                     </div>
                     <div class="col-span-3 bg-white p-4 rounded-xl shadow-sm border">
-                        <div id="modal-status-update-wrapper" class="hidden pb-4 mb-4 border-b">
-                            <form method="POST" id="modalStatusUpdateForm">
-                                <input type="hidden" name="action" value="update_status_from_modal">
-                                <input type="hidden" id="modalUpdateStatusIssueId" name="issue_id">
-                                <input type="hidden" id="modalUpdateStatusToken" name="token">
-                                <div class="flex flex-col sm:flex-row items-stretch gap-2">
-                                    <label for="modalStatusDropdown" class="sr-only">Update Status</label> <select id="modalStatusDropdown" name="status" class="block w-full flex-grow rounded-lg shadow-sm p-2 form-input">
-                                        <option>Open</option>
-                                        <option>In Progress</option>
-                                        <option>Resolved</option>
-                                        <option>Closed</option>
-                                    </select>
-                                    <button type="submit" class="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">Update Status</button>
-                                </div>
-                            </form>
-                        </div>
-
-                        <h4 class="font-semibold text-slate-600 text-sm uppercase tracking-wider mb-4">History & Comments</h4>
-                        <div id="modalComments" class="space-y-4 max-h-48 overflow-y-auto pr-2"></div>
+                        
+                        <h4 class="font-semibold text-slate-600 text-sm uppercase tracking-wider mb-4">Post an Update</h4>
+                        <div id="modalComments" class="space-y-4 max-h-48 overflow-y-auto pr-2 mb-4 border-b pb-4"></div>
                         
                         <form id="modalCommentForm" class="mt-4" enctype="multipart/form-data">
                             <input type="hidden" name="action" value="add_comment_ajax">
                             <input type="hidden" id="modalCommentIssueId" name="issue_id">
-                            <textarea name="comment" class="w-full p-3 border border-slate-300 rounded-lg text-sm" rows="2" placeholder="Add a comment..."></textarea>
+                            
+                            <div id="modal-status-update-wrapper" class="hidden mb-4">
+                                <label for="modalStatusDropdown" class="block text-sm font-medium text-slate-700 mb-1">Update Status (Optional)</label>
+                                <select id="modalStatusDropdown" name="status" class="block w-full rounded-lg shadow-sm p-2 form-input">
+                                    <option>Open</option>
+                                    <option>In Progress</option>
+                                    <option>Resolved</option>
+                                    <option>Closed</option>
+                                </select>
+                            </div>
+                            
+                            <label for="modal-comment-textarea" class="block text-sm font-medium text-slate-700 mb-1">Add a Comment (Optional)</label>
+                            <textarea name="comment" id="modal-comment-textarea" class="w-full p-3 border border-slate-300 rounded-lg text-sm" rows="2" placeholder="Type your comment here..."></textarea>
                             <div class="mt-2">
                                 <label for="comment-attachments" class="text-sm font-medium text-indigo-600 cursor-pointer hover:text-indigo-800">
                                     + Add Attachment
@@ -1266,7 +1395,7 @@ if ($page === 'logout') {
                             </div>
                             <div id="comment-attachment-previews" class="mt-2 flex flex-wrap gap-2"></div>
                             <div class="text-right mt-2">
-                                <button type="submit" class="px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">Post</button>
+                                <button type="submit" class="px-4 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors">Post Update</button>
                             </div>
                         </form>
                     </div>
@@ -1299,6 +1428,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const openModal = (issueData) => {
         const issue = JSON.parse(issueData.replace(/'/g, '"'));
         
+        // Mengisi data modal
         document.getElementById('modalTitle').textContent = issue.title;
         document.getElementById('modalLocation').textContent = issue.location;
         document.getElementById('modalPicEmail').textContent = issue.pic_emails.replace(/,/g, ', ');
@@ -1306,6 +1436,11 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('modalCommentIssueId').value = issue.id;
         document.getElementById('modalResendIssueId').value = issue.id;
         
+        // === BARIS YANG HILANG ADA DI SINI ===
+        document.getElementById('modalDrafterName').textContent = issue.drafter_name;
+        document.getElementById('modalDrafterEmail').textContent = issue.drafter_email;
+        // =====================================
+
         const conditionSpan = document.createElement('span');
         conditionSpan.textContent = issue.condition;
         conditionSpan.className = `text-xs font-semibold inline-block py-1 px-2.5 uppercase rounded-full ${getConditionClass(issue.condition)}`;
@@ -1365,12 +1500,9 @@ document.addEventListener('DOMContentLoaded', function() {
             commentsContainer.innerHTML = '<p class="text-sm text-slate-500 text-center py-4">No comments yet.</p>';
         }
 
-        // Logika untuk menampilkan/menyembunyikan form update status
         const statusUpdateWrapper = document.getElementById('modal-status-update-wrapper');
         if (issue.is_current_user_pic_or_drafter) {
             statusUpdateWrapper.classList.remove('hidden');
-            document.getElementById('modalUpdateStatusIssueId').value = issue.id;
-            document.getElementById('modalUpdateStatusToken').value = issue.access_token;
             document.getElementById('modalStatusDropdown').value = issue.status;
         } else {
             statusUpdateWrapper.classList.add('hidden');
@@ -1432,31 +1564,19 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => response.json())
         .then(data => {
-            if (data.success) {
-                addCommentToUI(data.comment);
-                this.reset();
-                document.getElementById('comment-attachment-previews').innerHTML = '';
-                const issueId = formData.get('issue_id');
-                const card = document.querySelector(`.kanban-card[data-issue*='"id":"${issueId}"']`);
-                if(card) {
-                    try {
-                        const currentData = JSON.parse(card.dataset.issue.replace(/'/g, '"'));
-                        if (!currentData.updates) currentData.updates = [];
-                        currentData.updates.push(data.comment);
-                        card.dataset.issue = JSON.stringify(currentData).replace(/"/g, "'");
-                    } catch (e) { console.error('Failed to update card data', e); }
-                }
+            if (data.success && data.reload) {
+                window.location.reload();
             } else {
-                alert(data.message || 'Failed to post comment.');
+                alert(data.message || 'Failed to post update.');
+                submitButton.disabled = false;
+                submitButton.textContent = 'Post Update';
             }
         })
         .catch(error => {
             console.error('Error:', error);
             alert('An error occurred. Please try again.');
-        })
-        .finally(() => {
             submitButton.disabled = false;
-            submitButton.textContent = 'Post';
+            submitButton.textContent = 'Post Update';
         });
     });
     
@@ -1686,13 +1806,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if(resendEmailForm){
         resendEmailForm.addEventListener('submit', showLoading);
     }
-
-    const modalStatusUpdateForm = document.getElementById('modalStatusUpdateForm');
-    if (modalStatusUpdateForm) {
-        modalStatusUpdateForm.addEventListener('submit', showLoading);
-    }
 });
 </script>
-
 </body>
 </html>
