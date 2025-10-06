@@ -1,6 +1,180 @@
 <?php
 require_once 'config.php';
-require_once 'functions.php'; // Memuat semua fungsi helper
+
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
+use PHPMailer\PHPMailer\SMTP;
+
+// ============== FUNGSI-FUNGSI HELPER ===============
+
+if (!function_exists('redirect')) {
+    function redirect($url) {
+        header("Location: " . BASE_URL . $url);
+        exit();
+    }
+}
+
+if (!function_exists('is_logged_in')) {
+    function is_logged_in() {
+        return isset($_SESSION['user_id']);
+    }
+}
+
+if (!function_exists('get_app_user')) {
+    function get_app_user($pdo) {
+        if (!is_logged_in()) return null;
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+        $stmt->execute([$_SESSION['user_id']]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+}
+
+if (!function_exists('flash_message')) {
+    function flash_message($key) {
+        if (isset($_SESSION['flash'][$key])) {
+            $type = $key === 'error' ? 'red' : 'green';
+            echo '<div class="p-4 mb-4 text-sm text-'.$type.'-800 bg-'.$type.'-100 rounded-lg" role="alert">' . htmlspecialchars($_SESSION['flash'][$key]) . '</div>';
+            unset($_SESSION['flash'][$key]);
+        }
+    }
+}
+
+// ============== FUNGSI EMAIL ===============
+if (!function_exists('send_notification_email')) {
+    function send_notification_email($pdo, $issue_id, $comment_id = null) {
+        $stmt_issue = $pdo->prepare("SELECT i.*, u.name as drafter_name, u.email as drafter_email FROM issues i JOIN users u ON i.drafter_id = u.id WHERE i.id = ?");
+        $stmt_issue->execute([$issue_id]);
+        $issue = $stmt_issue->fetch(PDO::FETCH_ASSOC);
+        if (!$issue) return false;
+
+        $stmt_updates = $pdo->prepare("SELECT * FROM issue_updates WHERE issue_id = ? ORDER BY created_at ASC");
+        $stmt_updates->execute([$issue_id]);
+        $updates = $stmt_updates->fetchAll(PDO::FETCH_ASSOC);
+
+        $mail = new PHPMailer(true);
+        try {
+            // SMTP Config
+            $mail->isSMTP(); $mail->Host = SMTP_HOST; $mail->SMTPAuth = true; $mail->Username = SMTP_USER; $mail->Password = SMTP_PASS; $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS; $mail->Port = SMTP_PORT;
+            $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
+            $mail->isHTML(true);
+
+            $template_path = 'email_template.html';
+            if (!file_exists($template_path)) return false;
+            $base_body = file_get_contents($template_path);
+
+            // THEME COLOR
+            $theme_color = '#3b82f6'; $theme_color_light = '#dbeafe';
+            switch ($issue['condition']) {
+                case 'Urgent': $theme_color = '#ef4444'; $theme_color_light = '#fee2e2'; break;
+                case 'High': $theme_color = '#f59e0b'; $theme_color_light = '#fef3c7'; break;
+                case 'Low': $theme_color = '#22c55e'; $theme_color_light = '#dcfce7'; break;
+            }
+
+            // ATTACHMENT BLOCK
+            $attachment_html_block = '';
+            if (!empty($issue['image_paths'])) {
+                $image_paths = json_decode($issue['image_paths'], true);
+                if (is_array($image_paths) && count($image_paths) > 0) {
+                    $image_grid = '<table width="100%" style="border-spacing: 0; margin-top: 12px;"><tr>';
+                    foreach($image_paths as $index => $path) {
+                        if(file_exists($path)) {
+                            $cid = 'issue_image_' . $index;
+                            $mail->addEmbeddedImage($path, $cid);
+                            $image_grid .= '<td style="padding: 0 4px;"><img src="cid:'.$cid.'" alt="Attachment" style="width: 100%; height: auto; border-radius: 8px; display: block;"></td>';
+                        }
+                    }
+                    $image_grid .= '</tr></table>';
+                    // Kita membungkusnya dalam <tr> dan <td> agar menjadi baris baru di tabel bersarang
+                    $attachment_html_block = '<tr><td style="padding-top: 16px;"><table width="100%" class="card" style="background-color:#f8fafc;"><tr><td><p class="h2">Attachments</p>'.$image_grid.'</td></tr></table></td></tr>';
+                }
+            }
+            
+            // HISTORY BLOCK (Bubble Chat)
+            $history_html = '';
+            foreach($updates as $update) {
+                $author_display = htmlspecialchars($update['created_by']);
+                if ($update['is_status_change']) $author_display = "System";
+                
+                $attachments_comment_html = '';
+                if (!empty($update['attachments'])) {
+                    $attachments = json_decode($update['attachments'], true);
+                    if(is_array($attachments) && count($attachments) > 0) {
+                        $attachments_comment_html .= '<div style="margin-top: 8px;">';
+                        foreach($attachments as $att_path) {
+                            if(file_exists($att_path)) {
+                                $cid = 'comment_'. uniqid() .'_att';
+                                $mail->addEmbeddedImage($att_path, $cid);
+                                $attachments_comment_html .= '<img src="cid:'.$cid.'" style="max-width: 80px; height: auto; border-radius: 8px; display:inline-block; margin-right: 8px;">';
+                            }
+                        }
+                        $attachments_comment_html .= '</div>';
+                    }
+                }
+                
+                $history_html .= '<div class="bubble" style="background-color: #e1e1e1;">
+                                    <p style="font-size: 13px; font-weight: 600; color: #1e293b; margin: 0 0 4px;">'.$author_display.' <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">'.date('d M Y, H:i', strtotime($update['created_at'])).'</span></p>
+                                    <p style="font-size: 14px; color: #334155; margin: 0;">'.nl2br(htmlspecialchars($update['notes'])).'</p>
+                                    '.$attachments_comment_html.'
+                                </div>';
+            }
+            if (empty($history_html)) $history_html = '<p style="font-size: 14px; color: #64748b; text-align: center;">No updates yet.</p>';
+
+            // BREADCRUMB BLOCK (New Style)
+            $statuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
+            $currentIndex = array_search($issue['status'], $statuses);
+            $breadcrumb_html = '';
+            foreach ($statuses as $index => $status) {
+                $is_active = ($index === $currentIndex);
+                $is_done = ($index < $currentIndex);
+                
+                $bg_color = $is_active ? $theme_color : ($is_done ? '#e2e8f0' : '#f8fafc');
+                $text_color = $is_active ? '#ffffff' : ($is_done ? '#475569' : '#94a3b8');
+                $border = $is_active ? 'none' : '1px solid #e2e8f0';
+
+                $breadcrumb_html .= '<span style="display: inline-block; padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 600; background-color:'.$bg_color.'; color:'.$text_color.'; border:'.$border.';">'.$status.'</span>';
+                if ($index < count($statuses) - 1) {
+                    $breadcrumb_html .= '<span style="font-size: 14px; color: #cbd5e1; padding: 0 8px; vertical-align: middle;">&gt;</span>';
+                }
+            }
+
+            // REPLACEMENTS
+            $common_replacements = [
+                '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
+                '{{drafter_name}}' => htmlspecialchars($issue['drafter_name']),
+                '{{pic_emails}}' => htmlspecialchars($issue['pic_emails']),
+                '{{issue_title}}' => htmlspecialchars($issue['title']),
+                '{{urgency_level}}' => htmlspecialchars($issue['condition']),
+                '{{location}}' => htmlspecialchars($issue['location']),
+                '{{attachment_block}}' => $attachment_html_block,
+                '{{history_block}}' => $history_html,
+                '{{breadcrumb_html}}' => $breadcrumb_html,
+            ];
+
+            // SENDING LOGIC...
+            $all_recipients = array_unique(array_filter(array_map('trim', array_merge(explode(',', $issue['pic_emails']), explode(',', $issue['cc_emails']), explode(',', $issue['bcc_emails']), [$issue['drafter_email']]))));
+            $commenter_email = $comment_id && isset($updates[count($updates)-1]) ? $updates[count($updates)-1]['created_by'] : '';
+            
+            foreach ($all_recipients as $recipient) {
+                if ($comment_id && $recipient === $commenter_email) continue;
+                
+                $mail->clearAllRecipients(); $mail->addAddress($recipient);
+                $body = str_replace(array_keys($common_replacements), array_values($common_replacements), $base_body);
+                
+                if ($comment_id) {
+                    $mail->Subject = 'Update on Ticket: ' . $issue['title'];
+                    $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['A new update on ticket: ' . $issue['title'], 'Ticket Updated', 'A new update has been posted. See history for details.'], $body);
+                } else {
+                    $mail->Subject = 'New Ticket Created: ' . $issue['title'];
+                    $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['New ticket created: ' . $issue['title'], 'New Ticket Created', nl2br(htmlspecialchars($issue['description']))], $body);
+                }
+                
+                $body = str_replace(['{{cta_link}}', '{{cta_text}}'], [BASE_URL . '?page=view_ticket&token=' . $issue['access_token'], 'View Full Ticket'], $body);
+                $mail->Body = $body; $mail->send();
+            }
+        } catch (Exception $e) { $_SESSION['flash']['error_detail'] = "Mailer Error: {$mail->ErrorInfo}"; return false; }
+        return true;
+    }
+}
 
 // ============== LOGIKA & ROUTING APLIKASI ===============
 $page = $_GET['page'] ?? 'home';
@@ -20,13 +194,11 @@ if ($action) {
                 $stmt = $pdo->prepare("INSERT INTO users (name, email, password, verification_token) VALUES (?, ?, ?, ?)");
                 $stmt->execute([$name, $email, $hashed_password, $verification_token]);
                 
-                //
-                // Fungsi untuk mengirim email verifikasi belum ada,
-                // tapi jika ada, panggil di sini
-                // send_verification_email($email, $verification_token); 
-                //
-                
-                $_SESSION['flash']['success'] = 'Registration successful! Please check your email to verify your account.';
+                if (send_verification_email($email, $verification_token)) {
+                     $_SESSION['flash']['success'] = 'Registration successful! Please check your email to verify your account.';
+                } else {
+                     $_SESSION['flash']['error'] = 'Registration successful, but failed to send verification email.';
+                }
                 redirect('?page=login');
             } catch (PDOException $e) {
                 if ($e->errorInfo[1] == 1062) {
@@ -63,7 +235,7 @@ if ($action) {
             break;
 
         case 'forgot_password':
-             $email = $_POST['email'];
+            $email = $_POST['email'];
             $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? AND is_verified = 1");
             $stmt->execute([$email]);
             $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -73,11 +245,7 @@ if ($action) {
                 $hashed_password = password_hash($temp_password, PASSWORD_DEFAULT);
                 $stmt_update = $pdo->prepare("UPDATE users SET password = ? WHERE id = ?");
                 $stmt_update->execute([$hashed_password, $user_data['id']]);
-                //
-                // Fungsi untuk mengirim email reset password belum ada,
-                // tapi jika ada, panggil di sini
-                // send_password_reset_email($email, $temp_password);
-                //
+                send_password_reset_email($email, $temp_password);
             }
             $_SESSION['flash']['success'] = 'If an account with that email exists, a temporary password has been sent.';
             redirect('?page=login');
@@ -152,12 +320,11 @@ if ($action) {
                 $stmt = $pdo->prepare("INSERT INTO issues (title, description, location, `condition`, pic_emails, cc_emails, bcc_emails, drafter_id, access_token, image_paths) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
                 $stmt->execute([$title, $description, $location, $condition, $pic_emails, $cc_emails, $bcc_emails, $drafter_id, $access_token, $image_paths_json]);
                 $issue_id = $pdo->lastInsertId();
-                
-                // === PERUBAHAN DI SINI ===
-                send_email_in_background($issue_id); // Kirim email di background
-                $_SESSION['flash']['success'] = 'Ticket created successfully. A notification will be sent shortly.';
-                // =========================
-
+                if (send_notification_email($pdo, $issue_id)) {
+                    $_SESSION['flash']['success'] = 'Ticket created and notification sent.';
+                } else {
+                    $_SESSION['flash']['error'] = 'Ticket created, but failed to send email. Please check error details.';
+                }
                 redirect('?page=dashboard');
             } catch (PDOException $e) {
                 $error = 'Failed to create ticket. ' . $e->getMessage();
@@ -167,10 +334,9 @@ if ($action) {
         case 'update_status_viewer':
             if (!is_logged_in()) redirect('?page=login');
             $issue_id = $_POST['issue_id'];
-            $token = $_POST['token'];
+            $token = $_POST['token']; // Mengambil token dari POST
             $new_status = $_POST['status'] ?? null;
             $notes = trim($_POST['comment']);
-            $last_comment_id = null;
 
             $stmt = $pdo->prepare("SELECT * FROM issues WHERE id = ? AND access_token = ?");
             $stmt->execute([$issue_id, $token]);
@@ -185,7 +351,6 @@ if ($action) {
                 $is_allowed_to_comment = in_array($user['email'], array_map('trim', $allowed_emails));
                 $is_allowed_to_change_status = in_array($user['email'], array_map('trim', explode(',', $issue['pic_emails']))) || $user['id'] == $issue['drafter_id'];
 
-
                 $pdo->beginTransaction();
                 try {
                     // Update status
@@ -195,10 +360,7 @@ if ($action) {
                         $status_note = "Status changed from {$issue['status']} to {$new_status} by {$user['email']}";
                         $stmt_log = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, is_status_change) VALUES (?, ?, ?, 1)");
                         $stmt_log->execute([$issue_id, $status_note, $user['email']]);
-                        $last_comment_id = $pdo->lastInsertId();
-                        // === PERUBAHAN DI SINI ===
-                        send_email_in_background($issue_id, $last_comment_id);
-                        // =========================
+                        send_notification_email($pdo, $issue_id, $pdo->lastInsertId());
                     }
                     
                     // Add comment
@@ -219,10 +381,7 @@ if ($action) {
                         $attachments_json = count($attachments) > 0 ? json_encode($attachments) : null;
                         $stmt_notes = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, attachments) VALUES (?, ?, ?, ?)");
                         $stmt_notes->execute([$issue_id, $notes, $user['email'], $attachments_json]);
-                        $last_comment_id = $pdo->lastInsertId();
-                        // === PERUBAHAN DI SINI ===
-                        send_email_in_background($issue_id, $last_comment_id);
-                        // =========================
+                        send_notification_email($pdo, $issue_id, $pdo->lastInsertId());
                     }
                     $pdo->commit();
                 } catch (Exception $e) { $pdo->rollBack(); }
@@ -276,9 +435,7 @@ if ($action) {
                         $stmt_insert->execute([$issue_id, $comment, $user['email'], $attachments_json]);
                         $last_id = $pdo->lastInsertId();
 
-                        // === PERUBAHAN DI SINI ===
-                        send_email_in_background($issue_id, $last_id);
-                        // =========================
+                        send_notification_email($pdo, $issue_id, $last_id);
 
                         $stmt_fetch = $pdo->prepare("SELECT * FROM issue_updates WHERE id = ?");
                         $stmt_fetch->execute([$last_id]);
@@ -307,10 +464,11 @@ if ($action) {
             $stmt = $pdo->prepare("SELECT id FROM issues WHERE id = ? AND drafter_id = ?");
             $stmt->execute([$issue_id, $_SESSION['user_id']]);
             if ($stmt->fetch()) {
-                 // === PERUBAHAN DI SINI ===
-                send_email_in_background($issue_id);
-                $_SESSION['flash']['success'] = 'Notification is being resent in the background.';
-                // =========================
+                if (send_notification_email($pdo, $issue_id)) {
+                    $_SESSION['flash']['success'] = 'Notification has been resent.';
+                } else {
+                    $_SESSION['flash']['error'] = 'Failed to resend notification.';
+                }
             } else {
                 $_SESSION['flash']['error'] = 'Invalid operation.';
             }
@@ -414,6 +572,16 @@ if ($page === 'logout') {
     </style>
 </head>
 <body class="h-full antialiased">
+    <div id="loading-overlay" class="fixed inset-0 z-[100] hidden items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div class="flex flex-col items-center gap-4 rounded-xl bg-white p-8 text-center shadow-2xl">
+            <svg class="h-16 w-16 animate-spin text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <h3 class="text-lg font-bold text-slate-800">Sending Notification...</h3>
+            <p class="text-sm text-slate-500">Please wait, this may take a moment.</p>
+        </div>
+    </div>
     <div class="min-h-full">
         <?php if (is_logged_in() && $page != 'pic_update' && $page != 'view_ticket'): ?>
         <nav class="bg-white/60 backdrop-blur-lg border-b border-slate-200 sticky top-0 z-40">
@@ -938,7 +1106,7 @@ if ($page === 'logout') {
                                         <form action="?page=view_ticket&token=<?php echo htmlspecialchars($token); ?>" method="POST" class="mt-6 border-t pt-4" enctype="multipart/form-data">
                                             <input type="hidden" name="action" value="update_status_viewer">
                                             <input type="hidden" name="issue_id" value="<?php echo $issue['id']; ?>">
-                                            
+                                            <input type="hidden" name="token" value="<?php echo htmlspecialchars($token); ?>">
                                             <?php if($is_pic_or_drafter): ?>
                                             <div class="mb-4">
                                                 <label for="status" class="block text-sm font-medium text-slate-700">Update Status</label>
@@ -1417,6 +1585,30 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
         });
+    }
+
+    const loadingOverlay = document.getElementById('loading-overlay');
+    
+    const showLoading = () => {
+        if (loadingOverlay) {
+            loadingOverlay.classList.remove('hidden');
+            loadingOverlay.classList.add('flex');
+        }
+    };
+
+    const createTicketForm = document.getElementById('create-ticket-form');
+    if (createTicketForm) {
+        createTicketForm.addEventListener('submit', showLoading);
+    }
+    
+    const viewTicketForm = document.querySelector('form[action*="page=view_ticket"]');
+    if (viewTicketForm) {
+        viewTicketForm.addEventListener('submit', showLoading);
+    }
+
+    const resendEmailForm = document.querySelector('form[action*="action=resend_email"]');
+    if(resendEmailForm){
+        resendEmailForm.addEventListener('submit', showLoading);
     }
 });
 </script>
