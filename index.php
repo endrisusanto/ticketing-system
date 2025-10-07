@@ -55,7 +55,7 @@ if (!function_exists('send_notification_email')) {
         $mail = new PHPMailer(true);
         try {
             // SMTP Config
-            $mail->isSMTP(); $mail->Host = SMTP_HOST; $mail->SMTPAuth = true; $mail->Username = SMTP_USER; $mail->Password = SMTP_PASS; $mail->SMTPSecure = 'auto'; $mail->Port = SMTP_PORT;
+            $mail->isSMTP(); $mail->Host = SMTP_HOST; $mail->SMTPAuth = true; $mail->Username = SMTP_USER; $mail->Password = SMTP_PASS; $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS; $mail->Port = SMTP_PORT;
             $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
             $mail->isHTML(true);
 
@@ -144,7 +144,7 @@ if (!function_exists('send_notification_email')) {
                 // Perubahan untuk dukungan Emoji/UTF-8
                 '{{drafter_name}}' => htmlspecialchars($issue['drafter_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{drafter_email}}' => htmlspecialchars($issue['drafter_email'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                '{{pic_emails}}' => htmlspecialchars($issue['pic_emails'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{pic_emails}}' => htmlspecialchars(str_replace(',', ', ', $issue['pic_emails']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{issue_title}}' => htmlspecialchars($issue['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{urgency_level}}' => htmlspecialchars($issue['condition'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{location}}' => htmlspecialchars($issue['location'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
@@ -189,7 +189,7 @@ if (!function_exists('send_verification_email')) {
             $mail->SMTPAuth = true;
             $mail->Username = SMTP_USER;
             $mail->Password = SMTP_PASS;
-            $mail->SMTPSecure = 'auto';
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
             $mail->Port = SMTP_PORT;
 
             // Penerima
@@ -1014,7 +1014,7 @@ if ($page === 'logout') {
                                                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"></path><circle cx="12" cy="10" r="3"></circle></svg>
                                                 <?php echo htmlspecialchars($issue['location']); ?>
                                             </p>
-                                            <p class="text-xs text-slate-400 mt-3 pt-3 border-t">To: <?php echo htmlspecialchars($issue['pic_emails']); ?></p>
+                                            <p class="text-xs text-slate-400 mt-3 pt-3 border-t">To:</p><ul class="text-xs text-slate-600 space-y-1 mt-1 pl-4 list-disc break-words"><?php $pic_emails_array = array_filter(array_map('trim', explode(',', $issue['pic_emails']))); foreach ($pic_emails_array as $email) { echo '<li>' . htmlspecialchars($email) . '</li>'; } ?></ul>
                                         </div>
                                         <?php endforeach; ?>
                                     </div>
@@ -1039,7 +1039,7 @@ if ($page === 'logout') {
                                         <tr class="hover:bg-slate-50 cursor-pointer kanban-card" data-issue='<?php echo json_encode($issue, JSON_HEX_APOS | JSON_HEX_QUOT); ?>'>
                                             <td class="px-6 py-4 whitespace-nowrap"><div class="text-sm font-medium text-slate-900"><?php echo htmlspecialchars($issue['title']); ?></div><div class="text-sm text-slate-500"><?php echo htmlspecialchars($issue['location']); ?></div></td>
                                             <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><?php echo htmlspecialchars($issue['drafter_name']); ?></td>
-                                            <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><?php echo htmlspecialchars($issue['pic_emails']); ?></td>
+                                            <td class="px-6 py-4 text-sm text-slate-500 break-words"><?php echo htmlspecialchars(str_replace(',', ', ', $issue['pic_emails'])); ?></td>
                                             <td class="px-6 py-4 whitespace-nowrap">
                                                 <span class="px-2.5 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo get_status_class($issue['status']); ?>">
                                                     <?php echo htmlspecialchars($issue['status']); ?>
@@ -1238,7 +1238,7 @@ if ($page === 'logout') {
                                             </div>
                                             <div><dt class="text-slate-500">Location</dt><dd class="text-slate-800 font-medium"><?php echo htmlspecialchars($issue['location']); ?></dd></div>
                                             <div><dt class="text-slate-500">Level Urgensi</dt><dd class="text-slate-800 font-medium"><?php echo htmlspecialchars($issue['condition']); ?></dd></div>
-                                            <div><dt class="text-slate-500">PIC Email(s)</dt><dd class="text-slate-800 font-medium break-all"><?php echo htmlspecialchars(str_replace(',',', ',$issue['pic_emails'])); ?></dd></div>
+                                            <div><dt class="text-slate-500">PIC Email(s)</dt><dd class="text-slate-800 font-medium break-all mt-1"><ul class="text-sm space-y-1 pl-4 list-disc"><?php $pic_emails_array = array_filter(array_map('trim', explode(',', $issue['pic_emails']))); foreach ($pic_emails_array as $email) { echo '<li>' . htmlspecialchars($email) . '</li>'; } ?></ul></dd></div>
                                         </dl>
                                     </div>
                                     <div class="col-span-3 md:col-span-2 bg-white p-4 rounded-xl shadow-sm border">
@@ -1822,6 +1822,20 @@ document.addEventListener('DOMContentLoaded', function() {
         resendEmailForm.addEventListener('submit', showLoading);
     }
 });
+
+// --- KODE YANG DITAMBAHKAN ---
+// Helper function for displaying email list in modal
+const generateEmailListHTML = (emailsString) => {
+    const emails = emailsString.split(',').map(e => e.trim()).filter(e => e.length > 0);
+    if (emails.length === 0) return '<span class="text-slate-500">N/A</span>';
+    let html = '<ul class="list-disc space-y-1 pl-5 text-sm">';
+    emails.forEach(email => {
+        html += `<li class="break-all">${email}</li>`;
+    });
+    html += '</ul>';
+    return html;
+};
+// --- AKHIR KODE YANG DITAMBAHKAN ---
 </script>
 </body>
 </html>

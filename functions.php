@@ -136,13 +136,24 @@ if (!function_exists('send_notification_email')) {
                 }
             }
 
+            // --- PERUBAHAN UNTUK TEMPLATE EMAIL (Bullet Point List) ---
+            $pic_emails_array = array_filter(array_map('trim', explode(',', $issue['pic_emails'])));
+            $pic_emails_list_html = '<ul style="padding-left: 18px; margin-top: 4px; margin-bottom: 0;">';
+            foreach ($pic_emails_array as $email) {
+                $pic_emails_list_html .= '<li style="font-size: 14px; color:#1e293b; margin-bottom: 4px; word-break: break-all; word-wrap: break-word;">' . htmlspecialchars($email, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</li>';
+            }
+            $pic_emails_list_html .= '</ul>';
+            // -----------------------------------------------------------
+
             // REPLACEMENTS
             $common_replacements = [
                 '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
                 // Perubahan untuk dukungan Emoji/UTF-8 dan menambahkan drafter_email
                 '{{drafter_name}}' => htmlspecialchars($issue['drafter_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{drafter_email}}' => htmlspecialchars($issue['drafter_email'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                '{{pic_emails}}' => htmlspecialchars($issue['pic_emails'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                // Ganti penggunaan {{pic_emails}} dengan {{pic_emails_list}} di template
+                '{{pic_emails}}' => htmlspecialchars(str_replace(',', ', ', $issue['pic_emails']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'), 
+                '{{pic_emails_list}}' => $pic_emails_list_html, // New replacement
                 '{{issue_title}}' => htmlspecialchars($issue['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{urgency_level}}' => htmlspecialchars($issue['condition'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{location}}' => htmlspecialchars($issue['location'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
@@ -151,28 +162,71 @@ if (!function_exists('send_notification_email')) {
                 '{{breadcrumb_html}}' => $breadcrumb_html,
             ];
 
-            // SENDING LOGIC...
-            $all_recipients = array_unique(array_filter(array_map('trim', array_merge(explode(',', $issue['pic_emails']), explode(',', $issue['cc_emails']), explode(',', $issue['bcc_emails']), [$issue['drafter_email']]))));
+            // --- PERUBAHAN LOGIKA PENGIRIMAN EMAIL DIMULAI DI SINI (Menggunakan BCC Massal) ---
+            
+            // 1. Kumpulkan semua alamat unik
+            $all_emails_string = trim($issue['pic_emails'] . ',' . $issue['cc_emails'] . ',' . $issue['bcc_emails'] . ',' . $issue['drafter_email'], ',');
+            $all_recipients_raw = array_unique(array_filter(array_map('trim', explode(',', $all_emails_string))));
+            
+            // Email yang melakukan update (untuk di-skip sebagai To/CC, dan dijadikan satu To: atau BCC)
             $commenter_email = $comment_id && isset($updates[count($updates)-1]) ? $updates[count($updates)-1]['created_by'] : '';
             
-            foreach ($all_recipients as $recipient) {
-                if ($comment_id && $recipient === $commenter_email) continue;
-                
-                $mail->clearAllRecipients(); $mail->addAddress($recipient);
-                $body = str_replace(array_keys($common_replacements), array_values($common_replacements), $base_body);
-                
-                if ($comment_id) {
-                    $mail->Subject = 'Update on Ticket: ' . $issue['title'];
-                    $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['A new update on ticket: ' . $issue['title'], 'Ticket Updated', 'A new update has been posted. See history for details.'], $body);
-                } else {
-                    $mail->Subject = 'New Ticket Created: ' . $issue['title'];
-                    // Perubahan untuk dukungan Emoji/UTF-8 pada deskripsi
-                    $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['New ticket created: ' . $issue['title'], 'New Ticket Created', nl2br(htmlspecialchars($issue['description'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'))], $body);
+            // Tentukan penerima utama (TO:)
+            // Ambil email pertama sebagai penerima TO: yang 'nampak' oleh semua orang
+            $to_recipient = array_shift($all_recipients_raw);
+            
+            // Sisa penerima (termasuk yang meng-update jika dia bukan TO: dan bukan saat ada komentar)
+            $bcc_recipients = $all_recipients_raw;
+
+            // Jika ada komentar baru, pastikan pengirim komentar tidak menerima notifikasi ganda
+            if (!empty($commenter_email)) {
+                if ($to_recipient === $commenter_email) {
+                    // Jika TO: adalah pengirim, pindahkan TO: ke BCC dan ambil penerima TO: baru
+                    $to_recipient = array_shift($bcc_recipients);
                 }
-                
-                $body = str_replace(['{{cta_link}}', '{{cta_text}}'], [BASE_URL . '?page=view_ticket&token=' . $issue['access_token'], 'View Full Ticket'], $body);
-                $mail->Body = $body; $mail->send();
+                // Hapus pengirim dari daftar BCC
+                $bcc_recipients = array_filter($bcc_recipients, function($email) use ($commenter_email) {
+                    return $email !== $commenter_email;
+                });
             }
+            
+            // Jika setelah filter hanya tersisa satu atau tanpa penerima
+            if (empty($to_recipient) && !empty($bcc_recipients)) {
+                $to_recipient = array_shift($bcc_recipients);
+            } elseif (empty($to_recipient) && empty($bcc_recipients)) {
+                return false; // Tidak ada penerima yang valid
+            }
+
+            $mail->clearAllRecipients();
+            $mail->clearBCCs();
+
+            // Atur Penerima TO: (Wajib ada satu)
+            $mail->addAddress($to_recipient);
+            
+            // Atur Penerima BCC: (Sisa semua penerima)
+            foreach ($bcc_recipients as $recipient) {
+                 if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                    $mail->addBCC($recipient);
+                 }
+            }
+            
+            // Konten Email (Subjek & Body)
+            $body = str_replace(array_keys($common_replacements), array_values($common_replacements), $base_body);
+            
+            if ($comment_id) {
+                $mail->Subject = 'Update on Ticket: ' . $issue['title'];
+                $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['A new update on ticket: ' . $issue['title'], 'Ticket Updated', 'A new update has been posted. See history for details.'], $body);
+            } else {
+                $mail->Subject = 'New Ticket Created: ' . $issue['title'];
+                // Perubahan untuk dukungan Emoji/UTF-8 pada deskripsi
+                $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['New ticket created: ' . $issue['title'], 'New Ticket Created', nl2br(htmlspecialchars($issue['description'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'))], $body);
+            }
+            
+            $body = str_replace(['{{cta_link}}', '{{cta_text}}'], [BASE_URL . '?page=view_ticket&token=' . $issue['access_token'], 'View Full Ticket'], $body);
+            $mail->Body = $body; $mail->send();
+            
+            // --- PERUBAHAN LOGIKA PENGIRIMAN EMAIL SELESAI DI SINI ---
+            
         } catch (Exception $e) { 
             // Tidak bisa menggunakan session flash di background script, jadi kita log ke file
             error_log("Mailer Error: {$mail->ErrorInfo}\n", 3, "email_error.log");
@@ -199,3 +253,5 @@ if (!function_exists('send_email_in_background')) {
         }
     }
 }
+
+?>
