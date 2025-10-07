@@ -155,7 +155,7 @@ if (!function_exists('send_notification_email')) {
             $commenter_email = $comment_id && isset($updates[count($updates)-1]) ? $updates[count($updates)-1]['created_by'] : '';
             
             foreach ($all_recipients as $recipient) {
-                if ($comment_id && $recipient === $commenter_email) continue;
+                // if ($comment_id && $recipient === $commenter_email) continue;
                 
                 $mail->clearAllRecipients(); $mail->addAddress($recipient);
                 $body = str_replace(array_keys($common_replacements), array_values($common_replacements), $base_body);
