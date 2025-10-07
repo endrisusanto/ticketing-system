@@ -33,7 +33,8 @@ if (!function_exists('flash_message')) {
     function flash_message($key) {
         if (isset($_SESSION['flash'][$key])) {
             $type = $key === 'error' ? 'red' : 'green';
-            echo '<div class="p-4 mb-4 text-sm text-'.$type.'-800 bg-'.$type.'-100 rounded-lg" role="alert">' . htmlspecialchars($_SESSION['flash'][$key]) . '</div>';
+            // Perubahan untuk dukungan Emoji/UTF-8
+            echo '<div class="p-4 mb-4 text-sm text-'.$type.'-800 bg-'.$type.'-100 rounded-lg" role="alert">' . htmlspecialchars($_SESSION['flash'][$key], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</div>';
             unset($_SESSION['flash'][$key]);
         }
     }
@@ -91,7 +92,8 @@ if (!function_exists('send_notification_email')) {
             // HISTORY BLOCK (Bubble Chat)
             $history_html = '';
             foreach($updates as $update) {
-                $author_display = htmlspecialchars($update['created_by']);
+                // Perubahan untuk dukungan Emoji/UTF-8
+                $author_display = htmlspecialchars($update['created_by'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
                 if ($update['is_status_change']) $author_display = "System";
                 
                 $attachments_comment_html = '';
@@ -112,7 +114,7 @@ if (!function_exists('send_notification_email')) {
                 
                 $history_html .= '<div class="bubble" style="background-color: #eef2ff;">
                                     <p style="font-size: 13px; font-weight: 600; color: #1e293b; margin: 0 0 4px;">'.$author_display.' <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">'.date('d M Y, H:i', strtotime($update['created_at'])).'</span></p>
-                                    <p style="font-size: 14px; color: #334155; margin: 0;">'.nl2br(htmlspecialchars($update['notes'])).'</p>
+                                    <p style="font-size: 14px; color: #334155; margin: 0;">'.nl2br(htmlspecialchars($update['notes'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')).'</p>
                                     '.$attachments_comment_html.'
                                 </div>';
             }
@@ -139,12 +141,13 @@ if (!function_exists('send_notification_email')) {
             // REPLACEMENTS
             $common_replacements = [
                 '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
-                '{{drafter_name}}' => htmlspecialchars($issue['drafter_name']),
-                '{{drafter_email}}' => htmlspecialchars($issue['drafter_email']), // <-- TAMBAHKAN BARIS INI
-                '{{pic_emails}}' => htmlspecialchars($issue['pic_emails']),
-                '{{issue_title}}' => htmlspecialchars($issue['title']),
-                '{{urgency_level}}' => htmlspecialchars($issue['condition']),
-                '{{location}}' => htmlspecialchars($issue['location']),
+                // Perubahan untuk dukungan Emoji/UTF-8
+                '{{drafter_name}}' => htmlspecialchars($issue['drafter_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{drafter_email}}' => htmlspecialchars($issue['drafter_email'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{pic_emails}}' => htmlspecialchars($issue['pic_emails'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{issue_title}}' => htmlspecialchars($issue['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{urgency_level}}' => htmlspecialchars($issue['condition'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{location}}' => htmlspecialchars($issue['location'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{attachment_block}}' => $attachment_html_block,
                 '{{history_block}}' => $history_html,
                 '{{breadcrumb_html}}' => $breadcrumb_html,
@@ -165,7 +168,8 @@ if (!function_exists('send_notification_email')) {
                     $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['A new update on ticket: ' . $issue['title'], 'Ticket Updated', 'A new update has been posted. See history for details.'], $body);
                 } else {
                     $mail->Subject = 'New Ticket Created: ' . $issue['title'];
-                    $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['New ticket created: ' . $issue['title'], 'New Ticket Created', nl2br(htmlspecialchars($issue['description']))], $body);
+                    // Perubahan untuk dukungan Emoji/UTF-8 pada deskripsi
+                    $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['New ticket created: ' . $issue['title'], 'New Ticket Created', nl2br(htmlspecialchars($issue['description'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'))], $body);
                 }
                 
                 $body = str_replace(['{{cta_link}}', '{{cta_text}}'], [BASE_URL . '?page=view_ticket&token=' . $issue['access_token'], 'View Full Ticket'], $body);
@@ -443,6 +447,10 @@ if ($action) {
                 $is_allowed_to_change_status = in_array($user['email'], array_map('trim', explode(',', $issue['pic_emails']))) || $user['id'] == $issue['drafter_id'];
 
                 $pdo->beginTransaction();
+                
+                // Perubahan untuk menggabungkan status, komentar, dan lampiran ke dalam satu pengiriman email
+                $email_needs_to_be_sent = false;
+                $last_update_id = null;
                 try {
                     // Update status
                     if ($is_allowed_to_change_status && $new_status && $new_status !== $issue['status']) {
@@ -451,7 +459,8 @@ if ($action) {
                         $status_note = "Status changed from {$issue['status']} to {$new_status} by {$user['email']}";
                         $stmt_log = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, is_status_change) VALUES (?, ?, ?, 1)");
                         $stmt_log->execute([$issue_id, $status_note, $user['email']]);
-                        send_notification_email($pdo, $issue_id, $pdo->lastInsertId());
+                        $last_update_id = $pdo->lastInsertId();
+                        $email_needs_to_be_sent = true;
                     }
                     
                     // Add comment
@@ -472,9 +481,14 @@ if ($action) {
                         $attachments_json = count($attachments) > 0 ? json_encode($attachments) : null;
                         $stmt_notes = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, attachments) VALUES (?, ?, ?, ?)");
                         $stmt_notes->execute([$issue_id, $notes, $user['email'], $attachments_json]);
-                        send_notification_email($pdo, $issue_id, $pdo->lastInsertId());
+                        $last_update_id = $pdo->lastInsertId();
+                        $email_needs_to_be_sent = true;
                     }
                     $pdo->commit();
+
+                    if ($email_needs_to_be_sent) {
+                        send_notification_email($pdo, $issue_id, $last_update_id);
+                    }
                 } catch (Exception $e) { $pdo->rollBack(); }
             }
             redirect("?page=view_ticket&token=$token");
@@ -511,6 +525,7 @@ if ($action) {
                     try {
                         $pdo->beginTransaction();
                         $email_needs_to_be_sent = false;
+                        $last_id = null; // Diperbarui untuk menyimpan ID log terakhir yang dimasukkan
 
                         // 1. Logika update status
                         if ($is_pic_or_drafter && $new_status && $new_status !== $issue['status']) {
@@ -519,10 +534,10 @@ if ($action) {
                             $status_note = "Status changed from {$issue['status']} to {$new_status} by {$user['email']}";
                             $stmt_log = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, is_status_change) VALUES (?, ?, ?, 1)");
                             $stmt_log->execute([$issue_id, $status_note, $user['email']]);
+                            $last_id = $pdo->lastInsertId(); // Memperbarui last_id
                             $email_needs_to_be_sent = true;
                         }
                         
-                        $last_id = null;
                         // 2. Logika tambah komentar
                         if (!empty($comment) || (!empty($_FILES['attachments']) && $_FILES['attachments']['error'][0] != UPLOAD_ERR_NO_FILE)) {
                             $attachments = [];
@@ -543,7 +558,7 @@ if ($action) {
 
                             $stmt_insert = $pdo->prepare("INSERT INTO issue_updates (issue_id, notes, created_by, attachments) VALUES (?, ?, ?, ?)");
                             $stmt_insert->execute([$issue_id, $comment, $user['email'], $attachments_json]);
-                            $last_id = $pdo->lastInsertId();
+                            $last_id = $pdo->lastInsertId(); // Memperbarui last_id ke ID komentar
                             $email_needs_to_be_sent = true;
                         }
                         
