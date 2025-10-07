@@ -154,80 +154,80 @@ if (!function_exists('send_notification_email')) {
             // END LOGIKA PEMBUATAN DAFTAR EMAIL PIC
 
 
-             // REPLACEMENTS
-             $common_replacements = [
-                 '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
-                 // Perubahan untuk dukungan Emoji/UTF-8
-                 '{{drafter_name}}' => htmlspecialchars($issue['drafter_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                 '{{drafter_email}}' => htmlspecialchars($issue['drafter_email'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+            // REPLACEMENTS
+            $common_replacements = [
+                // ... (daftar penggantian)
+                '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
+                '{{drafter_name}}' => htmlspecialchars($issue['drafter_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{drafter_email}}' => htmlspecialchars($issue['drafter_email'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{pic_emails}}' => htmlspecialchars(str_replace(',', ', ', $issue['pic_emails']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{pic_emails_list}}' => $pic_emails_list_html, 
-                 '{{issue_title}}' => htmlspecialchars($issue['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                 '{{urgency_level}}' => htmlspecialchars($issue['condition'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                 '{{location}}' => htmlspecialchars($issue['location'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                 '{{attachment_block}}' => $attachment_html_block,
-                 '{{history_block}}' => $history_html,
-                 '{{breadcrumb_html}}' => $breadcrumb_html,
-             ];
+                '{{issue_title}}' => htmlspecialchars($issue['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{urgency_level}}' => htmlspecialchars($issue['condition'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{location}}' => htmlspecialchars($issue['location'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{attachment_block}}' => $attachment_html_block,
+                '{{history_block}}' => $history_html,
+                '{{breadcrumb_html}}' => $breadcrumb_html,
+            ];
 
-            // --- LOGIKA PENGIRIMAN EMAIL MASSAL UNTUK VISIBILITAS ---
+            // --- LOGIKA PENGIRIMAN EMAIL MASSAL BARU: SEMUA PIC JADI TO ---
             
-            // 1. Kumpulkan semua alamat email yang harus saling melihat (PIC, CC, Drafter)
-            $visible_recipients_raw = array_unique(array_filter(array_map('trim', array_merge(
-                explode(',', $issue['pic_emails']), 
+            // 1. Kumpulkan semua alamat email PIC (TO: utama)
+            $to_recipients = array_unique(array_filter(array_map('trim', explode(',', $issue['pic_emails']))));
+            
+            // 2. Kumpulkan Drafter dan CC (CC:)
+            $cc_recipients_raw = array_unique(array_filter(array_map('trim', array_merge(
                 explode(',', $issue['cc_emails']), 
                 [$issue['drafter_email']]
             ))));
             
-            // 2. Kumpulkan penerima BCC (yang tersembunyi)
+            // 3. Kumpulkan BCC (BCC:)
             $bcc_recipients = array_unique(array_filter(array_map('trim', explode(',', $issue['bcc_emails']))));
-            
-            // 3. Tentukan pengirim komentar (yang harus dihilangkan dari penerima agar tidak ganda)
-            $commenter_email = $comment_id && isset($updates[count($updates)-1]) ? $updates[count($updates)-1]['created_by'] : '';
 
-            // Filter out the commenter's email from visible recipients
-            $visible_recipients = array_values(array_filter($visible_recipients_raw, function($email) use ($commenter_email) {
-                return $email !== $commenter_email;
+            // 4. Filter: Hapus email yang sudah menjadi TO dari daftar CC
+            $final_cc_recipients = array_values(array_filter($cc_recipients_raw, function($email) use ($to_recipients) {
+                return !in_array($email, $to_recipients);
             }));
-            
-            // Tentukan penerima utama (TO:), ambil yang pertama
-            $to_recipient = array_shift($visible_recipients);
-            
-            // Sisa penerima menjadi CC
-            $cc_recipients = $visible_recipients;
 
-            // Cek apakah ada penerima yang tersisa (termasuk BCC)
-            if (empty($to_recipient) && empty($cc_recipients) && empty($bcc_recipients)) {
-                return false; // Tidak ada penerima yang valid
+            // 5. Penanganan kasus jika daftar TO kosong (Tidak ada PIC)
+            $final_to_recipients = $to_recipients;
+            
+            if (empty($final_to_recipients)) {
+                // Jika tidak ada PIC, pindahkan Drafter/CC pertama ke TO:
+                if (!empty($final_cc_recipients)) {
+                    $to_recipient = array_shift($final_cc_recipients);
+                    $final_to_recipients[] = $to_recipient;
+                } elseif (filter_var($issue['drafter_email'], FILTER_VALIDATE_EMAIL)) {
+                    // Jika hanya ada Drafter dan dia belum terdaftar (kasus jarang)
+                    $to_recipient = $issue['drafter_email'];
+                    $final_to_recipients[] = $to_recipient;
+                } else {
+                    return false; // Tidak ada penerima yang valid
+                }
             }
             
-            // Jika TO kosong, gunakan Drafter/salah satu CC sebagai pengganti.
-            if (empty($to_recipient)) {
-                if (!empty($cc_recipients)) {
-                    $to_recipient = array_shift($cc_recipients);
-                } elseif (filter_var($issue['drafter_email'], FILTER_VALIDATE_EMAIL)) {
-                    $to_recipient = $issue['drafter_email'];
-                } else {
-                     return false; // Gagal menentukan TO:
-                }
+            // Final check on lists (hanya validasi format email)
+            $final_to_recipients = array_filter($final_to_recipients, 'filter_var', FILTER_VALIDATE_EMAIL);
+            $final_cc_recipients = array_filter($final_cc_recipients, 'filter_var', FILTER_VALIDATE_EMAIL);
+
+            if (empty($final_to_recipients) && empty($final_cc_recipients) && empty($bcc_recipients)) {
+                 return false; // Tidak ada penerima yang valid
             }
 
             $mail->clearAllRecipients();
             $mail->clearBCCs();
 
-            // Atur Penerima TO: (Wajib ada satu)
-            if (filter_var($to_recipient, FILTER_VALIDATE_EMAIL)) {
-                $mail->addAddress($to_recipient);
+            // Atur Penerima TO: (Semua PIC yang sudah difilter)
+            foreach ($final_to_recipients as $recipient) {
+                $mail->addAddress($recipient);
             }
 
-            // Atur Penerima CC: (Sisa penerima yang harus terlihat)
-            foreach ($cc_recipients as $recipient) {
-                 if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-                    $mail->addCC($recipient);
-                 }
+            // Atur Penerima CC: (Drafter dan CC yang tidak ada di PIC)
+            foreach ($final_cc_recipients as $recipient) {
+                $mail->addCC($recipient);
             }
 
-            // Atur Penerima BCC: (Penerima tersembunyi)
+            // Atur Penerima BCC:
             foreach ($bcc_recipients as $recipient) {
                  if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
                     $mail->addBCC($recipient);
@@ -247,11 +247,12 @@ if (!function_exists('send_notification_email')) {
             }
             
             $body = str_replace(['{{cta_link}}', '{{cta_text}}'], [BASE_URL . '?page=view_ticket&token=' . $issue['access_token'], 'View Full Ticket'], $body);
-            $mail->Body = $body; $mail->send();
+            $mail->Body = $body; 
             
-            // --- PERUBAHAN LOGIKA PENGIRIMAN EMAIL SELESAI DI SINI ---
-            
+            $mail->send();
+            return true;
         } catch (Exception $e) { 
+            // ... (logika catch)
             // Tidak bisa menggunakan session flash di background script, jadi kita log ke file
             error_log("Mailer Error: {$mail->ErrorInfo}\n", 3, "email_error.log");
             return false; 
