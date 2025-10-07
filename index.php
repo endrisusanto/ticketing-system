@@ -41,6 +41,9 @@ if (!function_exists('flash_message')) {
 }
 
 // ============== FUNGSI EMAIL ===============
+// index.php
+
+// ============== FUNGSI EMAIL ===============
 if (!function_exists('send_notification_email')) {
     function send_notification_email($pdo, $issue_id, $comment_id = null) {
         $stmt_issue = $pdo->prepare("SELECT i.*, u.name as drafter_name, u.email as drafter_email FROM issues i JOIN users u ON i.drafter_id = u.id WHERE i.id = ?");
@@ -137,6 +140,20 @@ if (!function_exists('send_notification_email')) {
                     $breadcrumb_html .= '<span style="font-size: 14px; color: #cbd5e1; padding: 0 8px; vertical-align: middle;">&gt;</span>';
                 }
             }
+            
+            // LOGIKA PEMBUATAN DAFTAR EMAIL PIC (Point List)
+            $pic_emails_array = array_filter(array_map('trim', explode(',', $issue['pic_emails'])));
+            $pic_emails_list_html = '<ul style="padding-left: 18px; margin-top: 4px; margin-bottom: 0;">';
+            
+            if (empty($pic_emails_array)) {
+                $pic_emails_list_html = '<p style="font-size: 14px; color:#64748b; margin:4px 0 0;">No PIC assigned.</p>';
+            } else {
+                foreach ($pic_emails_array as $email) {
+                    $pic_emails_list_html .= '<li style="font-size: 14px; color:#1e293b; margin-bottom: 4px; word-break: break-all; word-wrap: break-word;">' . htmlspecialchars($email, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</li>';
+                }
+                $pic_emails_list_html .= '</ul>';
+            }
+            // END LOGIKA PEMBUATAN DAFTAR EMAIL PIC
 
             // REPLACEMENTS
             $common_replacements = [
@@ -145,6 +162,7 @@ if (!function_exists('send_notification_email')) {
                 '{{drafter_name}}' => htmlspecialchars($issue['drafter_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{drafter_email}}' => htmlspecialchars($issue['drafter_email'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{pic_emails}}' => htmlspecialchars(str_replace(',', ', ', $issue['pic_emails']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{pic_emails_list}}' => $pic_emails_list_html, 
                 '{{issue_title}}' => htmlspecialchars($issue['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{urgency_level}}' => htmlspecialchars($issue['condition'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
                 '{{location}}' => htmlspecialchars($issue['location'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
@@ -153,32 +171,91 @@ if (!function_exists('send_notification_email')) {
                 '{{breadcrumb_html}}' => $breadcrumb_html,
             ];
 
-            // SENDING LOGIC...
-            $all_recipients = array_unique(array_filter(array_map('trim', array_merge(explode(',', $issue['pic_emails']), explode(',', $issue['cc_emails']), explode(',', $issue['bcc_emails']), [$issue['drafter_email']]))));
-            $commenter_email = $comment_id && isset($updates[count($updates)-1]) ? $updates[count($updates)-1]['created_by'] : '';
+            // --- LOGIKA PENGIRIMAN EMAIL MASSAL UNTUK VISIBILITAS (TERMASUK PENGIRIM KOMENTAR) ---
             
-            foreach ($all_recipients as $recipient) {
-                // if ($comment_id && $recipient === $commenter_email) continue;
-                
-                $mail->clearAllRecipients(); $mail->addAddress($recipient);
-                $body = str_replace(array_keys($common_replacements), array_values($common_replacements), $base_body);
-                
-                if ($comment_id) {
-                    $mail->Subject = 'Update on Ticket: ' . $issue['title'];
-                    $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['A new update on ticket: ' . $issue['title'], 'Ticket Updated', 'A new update has been posted. See history for details.'], $body);
-                } else {
-                    $mail->Subject = 'New Ticket Created: ' . $issue['title'];
-                    // Perubahan untuk dukungan Emoji/UTF-8 pada deskripsi
-                    $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['New ticket created: ' . $issue['title'], 'New Ticket Created', nl2br(htmlspecialchars($issue['description'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'))], $body);
-                }
-                
-                $body = str_replace(['{{cta_link}}', '{{cta_text}}'], [BASE_URL . '?page=view_ticket&token=' . $issue['access_token'], 'View Full Ticket'], $body);
-                $mail->Body = $body; $mail->send();
+            // 1. Kumpulkan semua alamat email yang harus saling melihat (PIC, CC, Drafter)
+            $all_visible_recipients = array_unique(array_filter(array_map('trim', array_merge(
+                explode(',', $issue['pic_emails']), 
+                explode(',', $issue['cc_emails']), 
+                [$issue['drafter_email']]
+            ))));
+            
+            // 2. Kumpulkan penerima BCC (yang tersembunyi)
+            $bcc_recipients = array_unique(array_filter(array_map('trim', explode(',', $issue['bcc_emails']))));
+            
+            // 3. Tentukan pengirim komentar (diperlukan untuk konteks, tapi tidak digunakan untuk filter)
+            // Logika pengecualian pengirim komentar dihapus, sehingga mereka akan diikutsertakan.
+            $commenter_email = $comment_id && isset($updates[count($updates)-1]) ? $updates[count($updates)-1]['created_by'] : '';
+
+            // Daftar penerima yang terlihat (sekarang termasuk pengirim komentar)
+            $visible_recipients = $all_visible_recipients;
+
+            // Tentukan penerima utama (TO:), ambil yang pertama
+            $to_recipient = array_shift($visible_recipients);
+            
+            // Sisa penerima menjadi CC
+            $cc_recipients = $visible_recipients;
+
+            // Cek apakah ada penerima yang tersisa (termasuk BCC)
+            if (empty($to_recipient) && empty($cc_recipients) && empty($bcc_recipients)) {
+                return false; // Tidak ada penerima yang valid
             }
+            
+            // Jika TO kosong, gunakan Drafter/salah satu CC sebagai pengganti.
+            if (empty($to_recipient)) {
+                if (!empty($cc_recipients)) {
+                    $to_recipient = array_shift($cc_recipients);
+                } elseif (filter_var($issue['drafter_email'], FILTER_VALIDATE_EMAIL)) {
+                    $to_recipient = $issue['drafter_email'];
+                } else {
+                     return false; // Gagal menentukan TO:
+                }
+            }
+
+            $mail->clearAllRecipients();
+            $mail->clearBCCs();
+
+            // Atur Penerima TO: (Wajib ada satu)
+            if (filter_var($to_recipient, FILTER_VALIDATE_EMAIL)) {
+                $mail->addAddress($to_recipient);
+            }
+
+            // Atur Penerima CC: (Sisa penerima yang harus terlihat)
+            foreach ($cc_recipients as $recipient) {
+                 if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                    $mail->addCC($recipient);
+                 }
+            }
+
+            // Atur Penerima BCC: (Penerima tersembunyi)
+            foreach ($bcc_recipients as $recipient) {
+                 if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                    $mail->addBCC($recipient);
+                 }
+            }
+
+            
+            // Konten Email (Subjek & Body)
+            $body = str_replace(array_keys($common_replacements), array_values($common_replacements), $base_body);
+            
+            if ($comment_id) {
+                $mail->Subject = 'Update on Ticket: ' . $issue['title'];
+                $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['A new update on ticket: ' . $issue['title'], 'Ticket Updated', 'A new update has been posted. See history for details.'], $body);
+            } else {
+                $mail->Subject = 'New Ticket Created: ' . $issue['title'];
+                // Perubahan untuk dukungan Emoji/UTF-8 pada deskripsi
+                $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['New ticket created: ' . $issue['title'], 'New Ticket Created', nl2br(htmlspecialchars($issue['description'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'))], $body);
+            }
+            
+            $body = str_replace(['{{cta_link}}', '{{cta_text}}'], [BASE_URL . '?page=view_ticket&token=' . $issue['access_token'], 'View Full Ticket'], $body);
+            $mail->Body = $body; 
+            
+            $mail->send();
+            return true;
         } catch (Exception $e) { $_SESSION['flash']['error_detail'] = "Mailer Error: {$mail->ErrorInfo}"; return false; }
-        return true;
     }
 }
+// ... (Sisa kode index.php)
 if (!function_exists('send_verification_email')) {
     function send_verification_email($recipient_email, $token) {
         $mail = new PHPMailer(true);
@@ -1446,7 +1523,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Mengisi data modal
         document.getElementById('modalTitle').textContent = issue.title;
         document.getElementById('modalLocation').textContent = issue.location;
-        document.getElementById('modalPicEmail').textContent = issue.pic_emails.replace(/,/g, ', ');
+        document.getElementById('modalPicEmail').innerHTML = generateEmailListHTML(issue.pic_emails);
         document.getElementById('modalDescription').innerHTML = issue.description.replace(/\n/g, '<br>');
         document.getElementById('modalCommentIssueId').value = issue.id;
         document.getElementById('modalResendIssueId').value = issue.id;
@@ -1823,18 +1900,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-// --- KODE YANG DITAMBAHKAN ---
+// --- KODE YANG DITAMBAHKAN (SUDAH DIPERBAIKI) ---
 // Helper function for displaying email list in modal
 const generateEmailListHTML = (emailsString) => {
     const emails = emailsString.split(',').map(e => e.trim()).filter(e => e.length > 0);
-    if (emails.length === 0) return '<span class="text-slate-500">N/A</span>';
-    let html = '<ul class="list-disc space-y-1 pl-5 text-sm">';
+    // Kita hapus break-all pada dd container dan pindahkan ke sini untuk styling yang lebih baik.
+    if (emails.length === 0) return '<span class="text-slate-500">N/A</span>'; 
+    let html = '<ul class="list-disc space-y-1 pl-4 text-sm">';
     emails.forEach(email => {
-        html += `<li class="break-all">${email}</li>`;
+        // KODE SUDAH BENAR: class diletakkan di <li>
+        html += `<li class="break-all text-slate-800">${email}</li>`; 
     });
     html += '</ul>';
     return html;
 };
+// --- AKHIR KODE YANG DITAMBAHKAN ---
+
+
 // --- AKHIR KODE YANG DITAMBAHKAN ---
 </script>
 </body>

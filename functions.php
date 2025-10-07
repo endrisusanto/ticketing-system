@@ -39,6 +39,9 @@ if (!function_exists('flash_message')) {
 }
 
 // ============== FUNGSI EMAIL ===============
+// functions.php
+
+// ============== FUNGSI EMAIL ===============
 if (!function_exists('send_notification_email')) {
     function send_notification_email($pdo, $issue_id, $comment_id = null) {
         $stmt_issue = $pdo->prepare("SELECT i.*, u.name as drafter_name, u.email as drafter_email FROM issues i JOIN users u ON i.drafter_id = u.id WHERE i.id = ?");
@@ -109,6 +112,154 @@ if (!function_exists('send_notification_email')) {
                         $attachments_comment_html .= '</div>';
                     }
                 }
+                
+                $history_html .= '<div class="bubble" style="background-color: #eef2ff;">
+                                    <p style="font-size: 13px; font-weight: 600; color: #1e293b; margin: 0 0 4px;">'.$author_display.' <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">'.date('d M Y, H:i', strtotime($update['created_at'])).'</span></p>
+                                    <p style="font-size: 14px; color: #334155; margin: 0;">'.nl2br(htmlspecialchars($update['notes'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')).'</p>
+                                    '.$attachments_comment_html.'
+                                </div>';
+            }
+            if (empty($history_html)) $history_html = '<p style="font-size: 14px; color: #64748b; text-align: center;">No updates yet.</p>';
+
+            // BREADCRUMB BLOCK (New Style)
+            $statuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
+            $currentIndex = array_search($issue['status'], $statuses);
+            $breadcrumb_html = '';
+            foreach ($statuses as $index => $status) {
+                $is_active = ($index === $currentIndex);
+                $is_done = ($index < $currentIndex);
+                
+                $bg_color = $is_active ? $theme_color : ($is_done ? '#e2e8f0' : '#f8fafc');
+                $text_color = $is_active ? '#ffffff' : ($is_done ? '#475569' : '#94a3b8');
+                $border = $is_active ? 'none' : '1px solid #e2e8f0';
+
+                $breadcrumb_html .= '<span style="display: inline-block; padding: 6px 14px; border-radius: 99px; font-size: 12px; font-weight: 600; background-color:'.$bg_color.'; color:'.$text_color.'; border:'.$border.';">'.$status.'</span>';
+                if ($index < count($statuses) - 1) {
+                    $breadcrumb_html .= '<span style="font-size: 14px; color: #cbd5e1; padding: 0 8px; vertical-align: middle;">&gt;</span>';
+                }
+            }
+
+            // LOGIKA PEMBUATAN DAFTAR EMAIL PIC (Point List)
+            $pic_emails_array = array_filter(array_map('trim', explode(',', $issue['pic_emails'])));
+            $pic_emails_list_html = '<ul style="padding-left: 18px; margin-top: 4px; margin-bottom: 0;">';
+            
+            if (empty($pic_emails_array)) {
+                $pic_emails_list_html = '<p style="font-size: 14px; color:#64748b; margin:4px 0 0;">No PIC assigned.</p>';
+            } else {
+                foreach ($pic_emails_array as $email) {
+                    $pic_emails_list_html .= '<li style="font-size: 14px; color:#1e293b; margin-bottom: 4px; word-break: break-all; word-wrap: break-word;">' . htmlspecialchars($email, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</li>';
+                }
+                $pic_emails_list_html .= '</ul>';
+            }
+            // END LOGIKA PEMBUATAN DAFTAR EMAIL PIC
+
+
+             // REPLACEMENTS
+             $common_replacements = [
+                 '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
+                 // Perubahan untuk dukungan Emoji/UTF-8
+                 '{{drafter_name}}' => htmlspecialchars($issue['drafter_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                 '{{drafter_email}}' => htmlspecialchars($issue['drafter_email'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{pic_emails}}' => htmlspecialchars(str_replace(',', ', ', $issue['pic_emails']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{pic_emails_list}}' => $pic_emails_list_html, 
+                 '{{issue_title}}' => htmlspecialchars($issue['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                 '{{urgency_level}}' => htmlspecialchars($issue['condition'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                 '{{location}}' => htmlspecialchars($issue['location'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                 '{{attachment_block}}' => $attachment_html_block,
+                 '{{history_block}}' => $history_html,
+                 '{{breadcrumb_html}}' => $breadcrumb_html,
+             ];
+
+            // --- LOGIKA PENGIRIMAN EMAIL MASSAL UNTUK VISIBILITAS ---
+            
+            // 1. Kumpulkan semua alamat email yang harus saling melihat (PIC, CC, Drafter)
+            $visible_recipients_raw = array_unique(array_filter(array_map('trim', array_merge(
+                explode(',', $issue['pic_emails']), 
+                explode(',', $issue['cc_emails']), 
+                [$issue['drafter_email']]
+            ))));
+            
+            // 2. Kumpulkan penerima BCC (yang tersembunyi)
+            $bcc_recipients = array_unique(array_filter(array_map('trim', explode(',', $issue['bcc_emails']))));
+            
+            // 3. Tentukan pengirim komentar (yang harus dihilangkan dari penerima agar tidak ganda)
+            $commenter_email = $comment_id && isset($updates[count($updates)-1]) ? $updates[count($updates)-1]['created_by'] : '';
+
+            // Filter out the commenter's email from visible recipients
+            $visible_recipients = array_values(array_filter($visible_recipients_raw, function($email) use ($commenter_email) {
+                return $email !== $commenter_email;
+            }));
+            
+            // Tentukan penerima utama (TO:), ambil yang pertama
+            $to_recipient = array_shift($visible_recipients);
+            
+            // Sisa penerima menjadi CC
+            $cc_recipients = $visible_recipients;
+
+            // Cek apakah ada penerima yang tersisa (termasuk BCC)
+            if (empty($to_recipient) && empty($cc_recipients) && empty($bcc_recipients)) {
+                return false; // Tidak ada penerima yang valid
+            }
+            
+            // Jika TO kosong, gunakan Drafter/salah satu CC sebagai pengganti.
+            if (empty($to_recipient)) {
+                if (!empty($cc_recipients)) {
+                    $to_recipient = array_shift($cc_recipients);
+                } elseif (filter_var($issue['drafter_email'], FILTER_VALIDATE_EMAIL)) {
+                    $to_recipient = $issue['drafter_email'];
+                } else {
+                     return false; // Gagal menentukan TO:
+                }
+            }
+
+            $mail->clearAllRecipients();
+            $mail->clearBCCs();
+
+            // Atur Penerima TO: (Wajib ada satu)
+            if (filter_var($to_recipient, FILTER_VALIDATE_EMAIL)) {
+                $mail->addAddress($to_recipient);
+            }
+
+            // Atur Penerima CC: (Sisa penerima yang harus terlihat)
+            foreach ($cc_recipients as $recipient) {
+                 if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                    $mail->addCC($recipient);
+                 }
+            }
+
+            // Atur Penerima BCC: (Penerima tersembunyi)
+            foreach ($bcc_recipients as $recipient) {
+                 if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                    $mail->addBCC($recipient);
+                 }
+            }
+            
+            // Konten Email (Subjek & Body)
+            $body = str_replace(array_keys($common_replacements), array_values($common_replacements), $base_body);
+            
+            if ($comment_id) {
+                $mail->Subject = 'Update on Ticket: ' . $issue['title'];
+                $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['A new update on ticket: ' . $issue['title'], 'Ticket Updated', 'A new update has been posted. See history for details.'], $body);
+            } else {
+                $mail->Subject = 'New Ticket Created: ' . $issue['title'];
+                // Perubahan untuk dukungan Emoji/UTF-8 pada deskripsi
+                $body = str_replace(['{{preheader}}', '{{header_title}}', '{{main_description}}'], ['New ticket created: ' . $issue['title'], 'New Ticket Created', nl2br(htmlspecialchars($issue['description'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'))], $body);
+            }
+            
+            $body = str_replace(['{{cta_link}}', '{{cta_text}}'], [BASE_URL . '?page=view_ticket&token=' . $issue['access_token'], 'View Full Ticket'], $body);
+            $mail->Body = $body; $mail->send();
+            
+            // --- PERUBAHAN LOGIKA PENGIRIMAN EMAIL SELESAI DI SINI ---
+            
+        } catch (Exception $e) { 
+            // Tidak bisa menggunakan session flash di background script, jadi kita log ke file
+            error_log("Mailer Error: {$mail->ErrorInfo}\n", 3, "email_error.log");
+            return false; 
+        }
+        return true;
+    }
+}
+// ... (Sisa kode functions.php)
                 
 // --- PENGGALAN SESUDAH PERUBAHAN (sekitar baris 155) ---
                 $history_html .= '<div class="bubble" style="background-color: #eef2ff;">
