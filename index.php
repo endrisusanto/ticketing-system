@@ -55,7 +55,7 @@ if (!function_exists('send_notification_email')) {
         $mail = new PHPMailer(true);
         try {
             // SMTP Config
-            $mail->isSMTP(); $mail->Host = SMTP_HOST; $mail->SMTPAuth = true; $mail->Username = SMTP_USER; $mail->Password = SMTP_PASS; $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS; $mail->Port = SMTP_PORT;
+            $mail->isSMTP(); $mail->Host = SMTP_HOST; $mail->SMTPAuth = true; $mail->Username = SMTP_USER; $mail->Password = SMTP_PASS; $mail->SMTPSecure = 'auto'; $mail->Port = SMTP_PORT;
             $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
             $mail->isHTML(true);
 
@@ -189,7 +189,7 @@ if (!function_exists('send_verification_email')) {
             $mail->SMTPAuth = true;
             $mail->Username = SMTP_USER;
             $mail->Password = SMTP_PASS;
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->SMTPSecure = 'auto';
             $mail->Port = SMTP_PORT;
 
             // Penerima

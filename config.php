@@ -20,11 +20,11 @@ define('BASE_URL', 'http://localhost/ticketing-system/');
 
 // --- PENGATURAN EMAIL (SMTP) ---
 // Gunakan layanan seperti Mailtrap.io untuk testing atau Gmail, SendGrid, dll. untuk produksi
-define('SMTP_HOST', 'smtp.gmail.com');
-define('SMTP_USER', 'endrisusantomyid@gmail.com'); // Ganti dengan username SMTP Anda
-define('SMTP_PASS', 'eoma miqi auvt xwdh'); // Ganti dengan password SMTP Anda
-define('SMTP_PORT', 587); // Port SMTP (587 untuk TLS, 465 untuk SSL)
-define('SMTP_FROM_EMAIL', 'endrisusantomyid@gmail.com');
+define('SMTP_HOST', 'smtp.samsung.net');
+define('SMTP_USER', 'endri.s@samsung.com'); // Ganti dengan username SMTP Anda
+define('SMTP_PASS', ''); // Ganti dengan password SMTP Anda
+define('SMTP_PORT', 25); // Port SMTP (587 untuk TLS, 465 untuk SSL)
+define('SMTP_FROM_EMAIL', 'mx.pe@samsung.com');
 define('SMTP_FROM_NAME', 'Issue Ticket System');
 
 // --- KONEKSI DATABASE (PDO) ---
