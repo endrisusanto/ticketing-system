@@ -110,7 +110,8 @@ if (!function_exists('send_notification_email')) {
                     }
                 }
                 
-                $history_html .= '<div class="bubble" style="background-color: #ffffff;">
+// --- PENGGALAN SESUDAH PERUBAHAN (sekitar baris 155) ---
+                $history_html .= '<div class="bubble" style="background-color: #eef2ff;">
                                     <p style="font-size: 13px; font-weight: 600; color: #1e293b; margin: 0 0 4px;">'.$author_display.' <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">'.date('d M Y, H:i', strtotime($update['created_at'])).'</span></p>
                                     <p style="font-size: 14px; color: #334155; margin: 0;">'.nl2br(htmlspecialchars($update['notes'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')).'</p>
                                     '.$attachments_comment_html.'
@@ -118,8 +119,25 @@ if (!function_exists('send_notification_email')) {
             }
             if (empty($history_html)) $history_html = '<p style="font-size: 14px; color: #64748b; text-align: center;">No updates yet.</p>';
 
+            // --- PERBAIKAN: LOGIKA PEMBUATAN DAFTAR EMAIL PIC (Point List) ---
+            $pic_emails_array = array_filter(array_map('trim', explode(',', $issue['pic_emails'])));
+            $pic_emails_list_html = '<ul style="padding-left: 18px; margin-top: 4px; margin-bottom: 0;">';
+            
+            // Tambahkan penanganan jika PIC kosong
+            if (empty($pic_emails_array)) {
+                $pic_emails_list_html = '<p style="font-size: 14px; color:#64748b; margin:4px 0 0;">No PIC assigned.</p>';
+            } else {
+                foreach ($pic_emails_array as $email) {
+                    // Membuat setiap email sebagai list item HTML
+                    $pic_emails_list_html .= '<li style="font-size: 14px; color:#1e293b; margin-bottom: 4px; word-break: break-all; word-wrap: break-word;">' . htmlspecialchars($email, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</li>';
+                }
+                $pic_emails_list_html .= '</ul>';
+            }
+            // -----------------------------------------------------------
+
             // BREADCRUMB BLOCK (New Style)
             $statuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
+// ...
             $currentIndex = array_search($issue['status'], $statuses);
             $breadcrumb_html = '';
             foreach ($statuses as $index => $status) {
@@ -145,22 +163,21 @@ if (!function_exists('send_notification_email')) {
             $pic_emails_list_html .= '</ul>';
             // -----------------------------------------------------------
 
-            // REPLACEMENTS
-            $common_replacements = [
-                '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
-                // Perubahan untuk dukungan Emoji/UTF-8 dan menambahkan drafter_email
-                '{{drafter_name}}' => htmlspecialchars($issue['drafter_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                '{{drafter_email}}' => htmlspecialchars($issue['drafter_email'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                // Ganti penggunaan {{pic_emails}} dengan {{pic_emails_list}} di template
-                '{{pic_emails}}' => htmlspecialchars(str_replace(',', ', ', $issue['pic_emails']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'), 
-                '{{pic_emails_list}}' => $pic_emails_list_html, // New replacement
-                '{{issue_title}}' => htmlspecialchars($issue['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                '{{urgency_level}}' => htmlspecialchars($issue['condition'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                '{{location}}' => htmlspecialchars($issue['location'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-                '{{attachment_block}}' => $attachment_html_block,
-                '{{history_block}}' => $history_html,
-                '{{breadcrumb_html}}' => $breadcrumb_html,
-            ];
+             // REPLACEMENTS
+             $common_replacements = [
+                 '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
+                 // Perubahan untuk dukungan Emoji/UTF-8
+                 '{{drafter_name}}' => htmlspecialchars($issue['drafter_name'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                 '{{drafter_email}}' => htmlspecialchars($issue['drafter_email'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{pic_emails}}' => htmlspecialchars(str_replace(',', ', ', $issue['pic_emails']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                '{{pic_emails_list}}' => $pic_emails_list_html, // Memasukkan variabel HTML bullet list yang sudah dibuat
+                 '{{issue_title}}' => htmlspecialchars($issue['title'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                 '{{urgency_level}}' => htmlspecialchars($issue['condition'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                 '{{location}}' => htmlspecialchars($issue['location'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+                 '{{attachment_block}}' => $attachment_html_block,
+                 '{{history_block}}' => $history_html,
+                 '{{breadcrumb_html}}' => $breadcrumb_html,
+             ];
 
             // --- PERUBAHAN LOGIKA PENGIRIMAN EMAIL DIMULAI DI SINI (Menggunakan BCC Massal) ---
             
