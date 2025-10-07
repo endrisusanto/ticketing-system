@@ -57,6 +57,7 @@ if (!function_exists('send_notification_email')) {
 
         $mail = new PHPMailer(true);
         try {
+            $mail->CharSet = 'UTF-8'; //
             // SMTP Config
             $mail->isSMTP(); $mail->Host = SMTP_HOST; $mail->SMTPAuth = true; $mail->Username = SMTP_USER; $mail->Password = SMTP_PASS; $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS; $mail->Port = SMTP_PORT;
             $mail->setFrom(SMTP_FROM_EMAIL, SMTP_FROM_NAME);
@@ -285,6 +286,7 @@ if (!function_exists('send_verification_email')) {
     function send_verification_email($recipient_email, $token) {
         $mail = new PHPMailer(true);
         try {
+            $mail->CharSet = 'UTF-8'; //
             // Pengaturan SMTP Server
             $mail->isSMTP();
             $mail->Host = SMTP_HOST;
