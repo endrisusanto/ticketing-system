@@ -154,7 +154,7 @@ if (!function_exists('send_notification_email')) {
             // END LOGIKA PEMBUATAN DAFTAR EMAIL PIC
 
 
-            // REPLACEMENTS
+// REPLACEMENTS
             $common_replacements = [
                 // ... (daftar penggantian)
                 '{{theme_color}}' => $theme_color, '{{theme_color_light}}' => $theme_color_light,
@@ -172,19 +172,25 @@ if (!function_exists('send_notification_email')) {
 
             // --- LOGIKA PENGIRIMAN EMAIL MASSAL BARU: SEMUA PIC JADI TO ---
             
-            // 1. Kumpulkan semua alamat email PIC (TO: utama)
+            $mail->clearAllRecipients(); // Bersihkan semua penerima sebelum memulai
+            $mail->clearBCCs();
+
+            // 1. Kumpulkan dan validasi semua alamat email PIC (TO: utama)
             $to_recipients = array_unique(array_filter(array_map('trim', explode(',', $issue['pic_emails']))));
-            
-            // 2. Kumpulkan Drafter dan CC (CC:)
+            $to_recipients = array_filter($to_recipients, 'filter_var', FILTER_VALIDATE_EMAIL);
+
+            // 2. Kumpulkan dan validasi Drafter dan CC (CC: potensial)
             $cc_recipients_raw = array_unique(array_filter(array_map('trim', array_merge(
                 explode(',', $issue['cc_emails']), 
                 [$issue['drafter_email']]
             ))));
+            $cc_recipients_raw = array_filter($cc_recipients_raw, 'filter_var', FILTER_VALIDATE_EMAIL);
             
-            // 3. Kumpulkan BCC (BCC:)
+            // 3. Kumpulkan dan validasi BCC (BCC:)
             $bcc_recipients = array_unique(array_filter(array_map('trim', explode(',', $issue['bcc_emails']))));
+            $bcc_recipients = array_filter($bcc_recipients, 'filter_var', FILTER_VALIDATE_EMAIL);
 
-            // 4. Filter: Hapus email yang sudah menjadi TO dari daftar CC
+            // 4. Filter: Hapus Drafter/CC yang sudah menjadi TO (PIC)
             $final_cc_recipients = array_values(array_filter($cc_recipients_raw, function($email) use ($to_recipients) {
                 return !in_array($email, $to_recipients);
             }));
@@ -192,30 +198,18 @@ if (!function_exists('send_notification_email')) {
             // 5. Penanganan kasus jika daftar TO kosong (Tidak ada PIC)
             $final_to_recipients = $to_recipients;
             
-            if (empty($final_to_recipients)) {
-                // Jika tidak ada PIC, pindahkan Drafter/CC pertama ke TO:
-                if (!empty($final_cc_recipients)) {
-                    $to_recipient = array_shift($final_cc_recipients);
-                    $final_to_recipients[] = $to_recipient;
-                } elseif (filter_var($issue['drafter_email'], FILTER_VALIDATE_EMAIL)) {
-                    // Jika hanya ada Drafter dan dia belum terdaftar (kasus jarang)
-                    $to_recipient = $issue['drafter_email'];
-                    $final_to_recipients[] = $to_recipient;
-                } else {
-                    return false; // Tidak ada penerima yang valid
-                }
+            if (empty($final_to_recipients) && !empty($final_cc_recipients)) {
+                // Pindahkan CC pertama ke TO: (Wajib ada satu TO:)
+                $to_recipient = array_shift($final_cc_recipients);
+                $final_to_recipients[] = $to_recipient;
+            } elseif (empty($final_to_recipients) && !empty($issue['drafter_email']) && filter_var($issue['drafter_email'], FILTER_VALIDATE_EMAIL)) {
+                 // Jika hanya ada Drafter dan dia belum terdaftar
+                 $final_to_recipients[] = $issue['drafter_email'];
             }
-            
-            // Final check on lists (hanya validasi format email)
-            $final_to_recipients = array_filter($final_to_recipients, 'filter_var', FILTER_VALIDATE_EMAIL);
-            $final_cc_recipients = array_filter($final_cc_recipients, 'filter_var', FILTER_VALIDATE_EMAIL);
 
             if (empty($final_to_recipients) && empty($final_cc_recipients) && empty($bcc_recipients)) {
                  return false; // Tidak ada penerima yang valid
             }
-
-            $mail->clearAllRecipients();
-            $mail->clearBCCs();
 
             // Atur Penerima TO: (Semua PIC yang sudah difilter)
             foreach ($final_to_recipients as $recipient) {
@@ -229,9 +223,7 @@ if (!function_exists('send_notification_email')) {
 
             // Atur Penerima BCC:
             foreach ($bcc_recipients as $recipient) {
-                 if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
-                    $mail->addBCC($recipient);
-                 }
+                $mail->addBCC($recipient);
             }
             
             // Konten Email (Subjek & Body)
@@ -252,6 +244,7 @@ if (!function_exists('send_notification_email')) {
             $mail->send();
             return true;
         } catch (Exception $e) { 
+            // ... (logika catch)
             // ... (logika catch)
             // Tidak bisa menggunakan session flash di background script, jadi kita log ke file
             error_log("Mailer Error: {$mail->ErrorInfo}\n", 3, "email_error.log");
