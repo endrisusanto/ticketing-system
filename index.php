@@ -210,17 +210,23 @@ if (!function_exists('send_notification_email')) {
             }
 
             // 6. Final Filtering: Hapus commenter dari semua list
-            if (!empty($commenter_email)) {
-                 $to_recipients = array_values(array_filter($to_recipients, function($email) use ($commenter_email) {
-                    return $email !== $commenter_email;
-                }));
-                 $final_cc_recipients = array_values(array_filter($final_cc_recipients, function($email) use ($commenter_email) {
-                    return $email !== $commenter_email;
-                }));
-                 $bcc_recipients = array_values(array_filter($bcc_recipients, function($email) use ($commenter_email) {
-                    return $email !== $commenter_email;
-                }));
-            }
+            //if (!empty($commenter_email)) {
+            //   $to_recipients = array_values(array_filter($to_recipients, function($email) use ($commenter_email) {
+            //      return $email !== $commenter_email;
+            //   }));
+            //   $final_cc_recipients = array_values(array_filter($final_cc_recipients, function($email) use ($commenter_email) {
+            //       return $email !== $commenter_email;
+            //   }));
+            //    $bcc_recipients = array_values(array_filter($bcc_recipients, function($email) use ($commenter_email) {
+            //        return $email !== $commenter_email;
+            //  }));
+            // }
+                if ($comment_id && !empty($commenter_email)) {
+                    // Promosikan pengirim komentar ke daftar TO utama.
+                    // Jika dia sudah ada di list lain (CC/BCC), array_unique di akhir proses pengumpulan TO akan menangani duplikat.
+                    $to_recipients[] = $commenter_email;
+                    $to_recipients = array_unique($to_recipients);
+                }
 
 
             // 7. Promosi (Pastikan ada minimal satu TO jika ada penerima)
