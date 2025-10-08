@@ -115,7 +115,8 @@ if (!function_exists('send_notification_email')) {
                     }
                 }
                 
-                $history_html .= '<div class="bubble" style="background-color: #eef2ff;">
+                // BARIS YANG TELAH DIMODIFIKASI UNTUK INLINE CSS BUBBLE CHAT
+                $history_html .= '<div class="bubble" style="background-color: #eef2ff; border-radius: 12px; padding: 12px; margin-bottom: 8px; border: 1px solid #e2e8f0;">
                                     <p style="font-size: 13px; font-weight: 600; color: #1e293b; margin: 0 0 4px;">'.$author_display.' <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">'.date('d M Y, H:i', strtotime($update['created_at'])).'</span></p>
                                     <p style="font-size: 14px; color: #334155; margin: 0;">'.nl2br(htmlspecialchars($update['notes'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')).'</p>
                                     '.$attachments_comment_html.'
@@ -173,61 +174,85 @@ if (!function_exists('send_notification_email')) {
 
             // --- LOGIKA PENGIRIMAN EMAIL MASSAL UNTUK VISIBILITAS (TERMASUK PENGIRIM KOMENTAR) ---
             
-            // 1. Kumpulkan semua alamat email yang harus saling melihat (PIC, CC, Drafter)
-            $all_visible_recipients = array_unique(array_filter(array_map('trim', array_merge(
-                explode(',', $issue['pic_emails']), 
+            $mail->clearAllRecipients(); 
+            $mail->clearBCCs();
+            $mail->clearCCs();
+
+            // 1. Kumpulkan semua PIC (TO: utama)
+            $to_recipients = array_unique(array_filter(array_map('trim', explode(',', $issue['pic_emails']))));
+            $to_recipients = array_filter($to_recipients, 'filter_var', FILTER_VALIDATE_EMAIL);
+
+            // 2. Kumpulkan Drafter dan CC (CC: potensial)
+            $cc_recipients_raw = array_unique(array_filter(array_map('trim', array_merge(
                 explode(',', $issue['cc_emails']), 
                 [$issue['drafter_email']]
             ))));
+            $cc_recipients_raw = array_filter($cc_recipients_raw, 'filter_var', FILTER_VALIDATE_EMAIL);
             
-            // 2. Kumpulkan penerima BCC (yang tersembunyi)
+            // 3. Kumpulkan BCC
             $bcc_recipients = array_unique(array_filter(array_map('trim', explode(',', $issue['bcc_emails']))));
-            
-            // 3. Tentukan pengirim komentar (diperlukan untuk konteks, tapi tidak digunakan untuk filter)
-            // Logika pengecualian pengirim komentar dihapus, sehingga mereka akan diikutsertakan.
-            $commenter_email = $comment_id && isset($updates[count($updates)-1]) ? $updates[count($updates)-1]['created_by'] : '';
+            $bcc_recipients = array_filter($bcc_recipients, 'filter_var', FILTER_VALIDATE_EMAIL);
 
-            // Daftar penerima yang terlihat (sekarang termasuk pengirim komentar)
-            $visible_recipients = $all_visible_recipients;
+            // 4. Filter: Hapus Drafter/CC yang sudah menjadi TO (PIC)
+            $final_cc_recipients = array_values(array_filter($cc_recipients_raw, function($email) use ($to_recipients) {
+                return !in_array($email, $to_recipients);
+            }));
 
-            // Tentukan penerima utama (TO:), ambil yang pertama
-            $to_recipient = array_shift($visible_recipients);
-            
-            // Sisa penerima menjadi CC
-            $cc_recipients = $visible_recipients;
-
-            // Cek apakah ada penerima yang tersisa (termasuk BCC)
-            if (empty($to_recipient) && empty($cc_recipients) && empty($bcc_recipients)) {
-                return false; // Tidak ada penerima yang valid
-            }
-            
-            // Jika TO kosong, gunakan Drafter/salah satu CC sebagai pengganti.
-            if (empty($to_recipient)) {
-                if (!empty($cc_recipients)) {
-                    $to_recipient = array_shift($cc_recipients);
-                } elseif (filter_var($issue['drafter_email'], FILTER_VALIDATE_EMAIL)) {
-                    $to_recipient = $issue['drafter_email'];
-                } else {
-                     return false; // Gagal menentukan TO:
+            // 5. Tentukan siapa yang mengirim komentar (untuk di-exclude agar tidak menerima notif ganda)
+            $commenter_email = '';
+            if ($comment_id) {
+                // Cari komentar terakhir berdasarkan $comment_id (yang merupakan ID log terakhir)
+                $last_update_index = array_search($comment_id, array_column($updates, 'id'));
+                if ($last_update_index !== false) {
+                     $commenter_email = $updates[$last_update_index]['created_by'];
                 }
             }
 
-            $mail->clearAllRecipients();
-            $mail->clearBCCs();
-
-            // Atur Penerima TO: (Wajib ada satu)
-            if (filter_var($to_recipient, FILTER_VALIDATE_EMAIL)) {
-                $mail->addAddress($to_recipient);
+            // 6. Final Filtering: Hapus commenter dari semua list
+            if (!empty($commenter_email)) {
+                 $to_recipients = array_values(array_filter($to_recipients, function($email) use ($commenter_email) {
+                    return $email !== $commenter_email;
+                }));
+                 $final_cc_recipients = array_values(array_filter($final_cc_recipients, function($email) use ($commenter_email) {
+                    return $email !== $commenter_email;
+                }));
+                 $bcc_recipients = array_values(array_filter($bcc_recipients, function($email) use ($commenter_email) {
+                    return $email !== $commenter_email;
+                }));
             }
 
-            // Atur Penerima CC: (Sisa penerima yang harus terlihat)
-            foreach ($cc_recipients as $recipient) {
+
+            // 7. Promosi (Pastikan ada minimal satu TO jika ada penerima)
+            if (empty($to_recipients)) {
+                if (!empty($final_cc_recipients)) {
+                    $to_recipient = array_shift($final_cc_recipients);
+                    $to_recipients[] = $to_recipient;
+                } elseif (!empty($bcc_recipients)) {
+                    // Jika BCC dipromosikan, itu akan terlihat oleh semua penerima, ini jarang diinginkan
+                    $to_recipient = array_shift($bcc_recipients);
+                    $to_recipients[] = $to_recipient;
+                }
+            }
+
+            if (empty($to_recipients) && empty($final_cc_recipients) && empty($bcc_recipients)) {
+                return false; // Tidak ada penerima yang valid
+            }
+
+            // Atur Penerima TO: (Semua PIC yang sudah difilter dan divalidasi)
+            foreach ($to_recipients as $recipient) {
+                 if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
+                    $mail->addAddress($recipient);
+                 }
+            }
+
+            // Atur Penerima CC: (Drafter dan CC yang tidak ada di PIC)
+            foreach ($final_cc_recipients as $recipient) {
                  if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
                     $mail->addCC($recipient);
                  }
             }
 
-            // Atur Penerima BCC: (Penerima tersembunyi)
+            // Atur Penerima BCC:
             foreach ($bcc_recipients as $recipient) {
                  if (filter_var($recipient, FILTER_VALIDATE_EMAIL)) {
                     $mail->addBCC($recipient);
