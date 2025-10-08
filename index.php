@@ -84,7 +84,7 @@ if (!function_exists('send_notification_email')) {
                         if(file_exists($path)) {
                             $cid = 'issue_image_' . $index;
                             $mail->addEmbeddedImage($path, $cid);
-                            $image_grid .= '<td style="padding: 0 4px;"><img src="cid:'.$cid.'" alt="Attachment" style="width: 100%; height: auto; border-radius: 8px; display: block;"></td>';
+                            $image_grid .= '<td style="padding: 0 4px;"><img src="cid:'.$cid.'" alt="Attachment" style="width: auto; height: 200px; border-radius: 8px; display: block;"></td>';
                         }
                     }
                     $image_grid .= '</tr></table>';
