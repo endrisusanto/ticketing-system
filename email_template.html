@@ -6,8 +6,10 @@
     <title>{{header_title}}</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background-color: #f1f5f9; color: #334155; }
+        /* PERUBAHAN: Menambahkan text-align: center; pada body */
+        body { margin: 0; padding: 0; font-family: 'Inter', sans-serif; background-color: #f1f5f9; color: #334155; text-align: center; } 
         .wrapper { width: 100%; table-layout: fixed; }
+        /* Lebar template diatur ke 750px */
         .main { margin: 0 auto; width: 100%; max-width: 750px; border-spacing: 0; }
         .header { background-color: {{theme_color}}; color: #ffffff; padding: 32px; border-radius: 16px 16px 0 0; text-align: center; }
         .content-shell { background-color: #ffffff; padding: 24px; border-radius: 0 0 16px 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -2px rgba(0,0,0,0.05); }
@@ -34,7 +36,7 @@
                 <td class="content-shell">
                     <table width="100%" class="breadcrumb-wrapper"><tr><td>{{breadcrumb_html}}</td></tr></table>
 
-                    <table width="100%" style="border-spacing: 0; padding-top: 24px;">
+                    <table width="100%" style="border-spacing: 0; padding-top: 12px;">
                         <tr>
                             <td width="40%" valign="top" style="padding-right: 8px;" height="100%">
                                 <table width="100%" class="card" style="background-color: #f8fafc; height: 100%;" height="100%">
@@ -62,24 +64,22 @@
                             </td>
                             <td width="60%" valign="top" style="padding-left: 8px;">
                                 <table width="100%" style="border-spacing: 0;">
-                                    
                                     <tr>
                                         <td class="card" style="background-color: #f8fafc;">
                                             <p class="h2">Description</p>
                                             <p class="text-sm">{{main_description}}</p>
                                         </td>
                                     </tr>
-                                    
                                     {{attachment_block}}
-                                    
-                                    <tr><td height="16" style="font-size: 1px; line-height: 1px;">&nbsp;</td></tr>
-
-                                    <tr><td class="card" style="background-color: #f8fafc;"><p class="h2">History & Comments</p>{{history_block}}</td></tr>
                                 </table>
                             </td>
                         </tr>
                     </table>
                     
+                    <table width="100%" style="border-spacing: 0; margin-top: 16px;">
+                        <tr><td class="card" style="background-color: #f8fafc;"><p class="h2">History & Comments</p>{{history_block}}</td></tr>
+                    </table>
+
                     <table width="100%" style="border-spacing: 0; margin-top: 32px;">
                         <tr><td style="text-align: center;"><a href="{{cta_link}}" style="background-color: {{theme_color}}; color: #ffffff; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; display: inline-block;">{{cta_text}}</a></td></tr>
                     </table>
