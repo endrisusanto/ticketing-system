@@ -73,23 +73,62 @@ if (!function_exists('send_notification_email')) {
                 case 'Low': $theme_color = '#22c55e'; $theme_color_light = '#dcfce7'; break;
             }
 
-            // ATTACHMENT BLOCK
-            $attachment_html_block = '';
-            if (!empty($issue['image_paths'])) {
-                $image_paths = json_decode($issue['image_paths'], true);
-                if (is_array($image_paths) && count($image_paths) > 0) {
-                    $image_grid = '<table width="100%" style="border-spacing: 0; margin-top: 12px;"><tr>';
-                    foreach($image_paths as $index => $path) {
-                        if(file_exists($path)) {
-                            $cid = 'issue_image_' . $index;
-                            $mail->addEmbeddedImage($path, $cid);
-                            $image_grid .= '<td style="padding: 0 4px;"><img src="cid:'.$cid.'" alt="Attachment" style="width: 100%; height: auto; border-radius: 8px; display: block;"></td>';
-                        }
-                    }
-                    $image_grid .= '</tr></table>';
-                    $attachment_html_block = '<tr><td style="padding-top: 16px;"><table width="100%" class="card" style="background-color:#f8fafc;"><tr><td><p class="h2">Attachments</p>'.$image_grid.'</td></tr></table></td></tr>';
+// ATTACHMENT BLOCK
+$attachment_html_block = '';
+if (!empty($issue['image_paths'])) {
+    $image_paths = json_decode($issue['image_paths'], true);
+    if (is_array($image_paths) && count($image_paths) > 0) {
+        $image_grid_items = '';
+        $standard_attachments_html = '';
+        $has_image = false;
+        $has_non_image = false;
+        $allowed_image_ext = ['jpg', 'jpeg', 'png', 'gif'];
+
+        foreach($image_paths as $index => $path) {
+            if(file_exists($path)) {
+                // Semua file ditambahkan sebagai attachment ke email (tidak tergantung tipenya)
+                $mail->addAttachment($path, basename($path)); 
+                
+                $file_extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+                
+                if (in_array($file_extension, $allowed_image_ext)) {
+                    // Sematkan Gambar ke dalam badan email untuk preview
+                    $cid = 'issue_image_' . $index;
+                    $mail->addEmbeddedImage($path, $cid, basename($path));
+                    $image_grid_items .= '<td style="padding: 0 4px;"><img src="cid:'.$cid.'" alt="Attachment" style="width: 100%; height: auto; border-radius: 8px; display: block;"></td>';
+                    $has_image = true;
+                } else {
+                    // List nama file non-gambar dalam body email
+                    $standard_attachments_html .= '<li style="font-size: 14px; color:#1e293b; margin-bottom: 4px; word-break: break-all; word-wrap: break-word;">' . basename($path) . '</li>';
+                    $has_non_image = true;
                 }
             }
+        }
+        
+        // Membangun struktur HTML untuk blok lampiran
+        $all_attachments_content = '';
+
+        if ($has_image) {
+            $image_grid = '<table width="100%" style="border-spacing: 0; margin-top: 12px;"><tr>'.$image_grid_items.'</tr></table>';
+            $all_attachments_content .= $image_grid;
+        }
+        
+        if ($has_non_image) {
+            $standard_attachments_html = '
+                <p style="font-size: 14px; font-weight: 600; margin: 12px 0 8px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;'.($has_image ? ' border-top: 1px solid #e2e8f0; padding-top: 12px;' : '').'">Attached Files (Sent as Attachment)</p>
+                <ul style="padding-left: 18px; margin-top: 4px; margin-bottom: 0;">'.$standard_attachments_html.'</ul>
+            ';
+            $all_attachments_content .= $standard_attachments_html;
+        }
+
+        if ($has_image || $has_non_image) {
+            $attachment_html_block = '<tr><td style="padding-top: 16px;"><table width="100%" class="card" style="background-color:#f8fafc;"><tr><td style="padding: 20px;">
+                                        <p class="h2" style="font-size: 14px; font-weight: 600; margin: 0 0 12px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">Attachments</p>
+                                        '.$all_attachments_content.'
+                                        </td></tr></table></td></tr>';
+        }
+    }
+}
             
             // HISTORY BLOCK (Bubble Chat)
             $history_html = '';
@@ -98,30 +137,52 @@ if (!function_exists('send_notification_email')) {
                 $author_display = htmlspecialchars($update['created_by'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
                 if ($update['is_status_change']) $author_display = "System";
                 
-                $attachments_comment_html = '';
-                if (!empty($update['attachments'])) {
-                    $attachments = json_decode($update['attachments'], true);
-                    if(is_array($attachments) && count($attachments) > 0) {
-                        $attachments_comment_html .= '<div style="margin-top: 8px;">';
-                        foreach($attachments as $att_path) {
-                            if(file_exists($att_path)) {
-                                $cid = 'comment_'. uniqid() .'_att';
-                                $mail->addEmbeddedImage($att_path, $cid);
-                                $attachments_comment_html .= '<img src="cid:'.$cid.'" style="max-width: 80px; height: auto; border-radius: 8px; display:inline-block; margin-right: 8px;">';
-                            }
-                        }
-                        $attachments_comment_html .= '</div>';
-                    }
-                }
+// --- FILE: functions.php (around line 108) AND index.php (around line 150) ---
+
+$attachments_comment_html = '';
+if (!empty($update['attachments'])) {
+    $attachments = json_decode($update['attachments'], true);
+    if(is_array($attachments) && count($attachments) > 0) {
+        $image_previews_html = '';
+        $file_list_html = '';
+        $allowed_image_ext = ['jpg', 'jpeg', 'png', 'gif'];
+        
+        foreach($attachments as $att_path) {
+            if(file_exists($att_path)) {
+                // Semua file ditambahkan sebagai attachment ke email (tidak tergantung tipenya)
+                $mail->addAttachment($att_path, basename($att_path)); 
                 
-                // BARIS YANG TELAH DIMODIFIKASI UNTUK INLINE CSS BUBBLE CHAT
-                $history_html .= '<div class="bubble" style="background-color: #eef2ff; border-radius: 12px; padding: 12px; margin-bottom: 8px; border: 1px solid #e2e8f0;">
-                                    <p style="font-size: 13px; font-weight: 600; color: #1e293b; margin: 0 0 4px;">'.$author_display.' <span style="font-size: 11px; color: #94a3b8; font-weight: normal;">'.date('d M Y, H:i', strtotime($update['created_at'])).'</span></p>
-                                    <p style="font-size: 14px; color: #334155; margin: 0;">'.nl2br(htmlspecialchars($update['notes'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')).'</p>
-                                    '.$attachments_comment_html.'
-                                </div>';
+                $file_extension = strtolower(pathinfo($att_path, PATHINFO_EXTENSION));
+
+                if (in_array($file_extension, $allowed_image_ext)) {
+                    // Sematkan Gambar untuk tampilan inline
+                    $cid = 'comment_'. uniqid() .'_att';
+                    $mail->addEmbeddedImage($att_path, $cid, basename($att_path));
+                    $image_previews_html .= '<img src="cid:'.$cid.'" style="max-width: 80px; height: auto; border-radius: 8px; display:inline-block; margin-right: 8px;">';
+                } else {
+                    // List nama file non-gambar dalam body email
+                    $file_list_html .= '<li style="font-size: 13px; color:#475569; margin-bottom: 2px;">'.basename($att_path).'</li>';
+                }
             }
-            if (empty($history_html)) $history_html = '<p style="font-size: 14px; color: #64748b; text-align: center;">No updates yet.</p>';
+        }
+
+        if (!empty($image_previews_html) || !empty($file_list_html)) {
+             $attachments_comment_html .= '<div style="margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 8px;">';
+             
+             if (!empty($image_previews_html)) {
+                 $attachments_comment_html .= '<p style="font-size: 13px; font-weight: 600; margin: 0 0 4px; color: #0f172a;">Image Previews:</p>';
+                 $attachments_comment_html .= '<div>'.$image_previews_html.'</div>';
+             }
+
+             if (!empty($file_list_html)) {
+                 $attachments_comment_html .= '<p style="font-size: 13px; font-weight: 600; margin: '.(empty($image_previews_html) ? '0' : '8px 0 4px').'; color: #0f172a;">Attached Files (Sent as attachment):</p>';
+                 $attachments_comment_html .= '<ul style="padding-left: 18px; margin: 0;">'.$file_list_html.'</ul>';
+             }
+             
+             $attachments_comment_html .= '</div>';
+        }
+    }
+}
 
             // BREADCRUMB BLOCK (New Style)
             $statuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
@@ -282,7 +343,7 @@ if (!function_exists('send_notification_email')) {
             
             $mail->send();
             return true;
-        } catch (Exception $e) { 
+        } catch (Exception $e) {
             // Tidak bisa menggunakan session flash di background script, jadi kita log ke file
             error_log("Mailer Error: {$mail->ErrorInfo}\n", 3, "email_error.log");
             return false; 

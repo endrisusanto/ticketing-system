@@ -75,23 +75,62 @@ if (!function_exists('send_notification_email')) {
                 case 'Low': $theme_color = '#22c55e'; $theme_color_light = '#dcfce7'; break;
             }
 
-            // ATTACHMENT BLOCK
-            $attachment_html_block = '';
-            if (!empty($issue['image_paths'])) {
-                $image_paths = json_decode($issue['image_paths'], true);
-                if (is_array($image_paths) && count($image_paths) > 0) {
-                    $image_grid = '<table width="100%" style="border-spacing: 0; margin-top: 12px;"><tr>';
-                    foreach($image_paths as $index => $path) {
-                        if(file_exists($path)) {
-                            $cid = 'issue_image_' . $index;
-                            $mail->addEmbeddedImage($path, $cid);
-                            $image_grid .= '<td style="padding: 0 4px;"><img src="cid:'.$cid.'" alt="Attachment" style="width: auto; height: 200px; border-radius: 8px; display: block;"></td>';
-                        }
-                    }
-                    $image_grid .= '</tr></table>';
-                    $attachment_html_block = '<tr><td style="padding-top: 16px;"><table width="100%" class="card" style="background-color:#f8fafc;"><tr><td><p class="h2">Attachments</p>'.$image_grid.'</td></tr></table></td></tr>';
+// ATTACHMENT BLOCK
+$attachment_html_block = '';
+if (!empty($issue['image_paths'])) {
+    $image_paths = json_decode($issue['image_paths'], true);
+    if (is_array($image_paths) && count($image_paths) > 0) {
+        $image_grid_items = '';
+        $standard_attachments_html = '';
+        $has_image = false;
+        $has_non_image = false;
+        $allowed_image_ext = ['jpg', 'jpeg', 'png', 'gif'];
+
+        foreach($image_paths as $index => $path) {
+            if(file_exists($path)) {
+                // Semua file ditambahkan sebagai attachment ke email (tidak tergantung tipenya)
+                $mail->addAttachment($path, basename($path)); 
+                
+                $file_extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+                
+                if (in_array($file_extension, $allowed_image_ext)) {
+                    // Sematkan Gambar ke dalam badan email untuk preview
+                    $cid = 'issue_image_' . $index;
+                    $mail->addEmbeddedImage($path, $cid, basename($path));
+                    $image_grid_items .= '<td style="padding: 0 4px;"><img src="cid:'.$cid.'" alt="Attachment" style="width: 100%; height: auto; border-radius: 8px; display: block;"></td>';
+                    $has_image = true;
+                } else {
+                    // List nama file non-gambar dalam body email
+                    $standard_attachments_html .= '<li style="font-size: 14px; color:#1e293b; margin-bottom: 4px; word-break: break-all; word-wrap: break-word;">' . basename($path) . '</li>';
+                    $has_non_image = true;
                 }
             }
+        }
+        
+        // Membangun struktur HTML untuk blok lampiran
+        $all_attachments_content = '';
+
+        if ($has_image) {
+            $image_grid = '<table width="100%" style="border-spacing: 0; margin-top: 12px;"><tr>'.$image_grid_items.'</tr></table>';
+            $all_attachments_content .= $image_grid;
+        }
+        
+        if ($has_non_image) {
+            $standard_attachments_html = '
+                <p style="font-size: 14px; font-weight: 600; margin: 12px 0 8px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;'.($has_image ? ' border-top: 1px solid #e2e8f0; padding-top: 12px;' : '').'">Attached Files (Sent as Attachment)</p>
+                <ul style="padding-left: 18px; margin-top: 4px; margin-bottom: 0;">'.$standard_attachments_html.'</ul>
+            ';
+            $all_attachments_content .= $standard_attachments_html;
+        }
+
+        if ($has_image || $has_non_image) {
+            $attachment_html_block = '<tr><td style="padding-top: 16px;"><table width="100%" class="card" style="background-color:#f8fafc;"><tr><td style="padding: 20px;">
+                                        <p class="h2" style="font-size: 14px; font-weight: 600; margin: 0 0 12px; color: #0f172a; text-transform: uppercase; letter-spacing: 0.5px;">Attachments</p>
+                                        '.$all_attachments_content.'
+                                        </td></tr></table></td></tr>';
+        }
+    }
+}
             
             // HISTORY BLOCK (Bubble Chat)
             $history_html = '';
@@ -100,21 +139,52 @@ if (!function_exists('send_notification_email')) {
                 $author_display = htmlspecialchars($update['created_by'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
                 if ($update['is_status_change']) $author_display = "System";
                 
-                $attachments_comment_html = '';
-                if (!empty($update['attachments'])) {
-                    $attachments = json_decode($update['attachments'], true);
-                    if(is_array($attachments) && count($attachments) > 0) {
-                        $attachments_comment_html .= '<div style="margin-top: 8px;">';
-                        foreach($attachments as $att_path) {
-                            if(file_exists($att_path)) {
-                                $cid = 'comment_'. uniqid() .'_att';
-                                $mail->addEmbeddedImage($att_path, $cid);
-                                $attachments_comment_html .= '<img src="cid:'.$cid.'" style="max-width: 80px; height: auto; border-radius: 8px; display:inline-block; margin-right: 8px;">';
-                            }
-                        }
-                        $attachments_comment_html .= '</div>';
-                    }
+// --- FILE: functions.php (around line 108) AND index.php (around line 150) ---
+
+$attachments_comment_html = '';
+if (!empty($update['attachments'])) {
+    $attachments = json_decode($update['attachments'], true);
+    if(is_array($attachments) && count($attachments) > 0) {
+        $image_previews_html = '';
+        $file_list_html = '';
+        $allowed_image_ext = ['jpg', 'jpeg', 'png', 'gif'];
+        
+        foreach($attachments as $att_path) {
+            if(file_exists($att_path)) {
+                // Semua file ditambahkan sebagai attachment ke email (tidak tergantung tipenya)
+                $mail->addAttachment($att_path, basename($att_path)); 
+                
+                $file_extension = strtolower(pathinfo($att_path, PATHINFO_EXTENSION));
+
+                if (in_array($file_extension, $allowed_image_ext)) {
+                    // Sematkan Gambar untuk tampilan inline
+                    $cid = 'comment_'. uniqid() .'_att';
+                    $mail->addEmbeddedImage($att_path, $cid, basename($att_path));
+                    $image_previews_html .= '<img src="cid:'.$cid.'" style="max-width: 80px; height: auto; border-radius: 8px; display:inline-block; margin-right: 8px;">';
+                } else {
+                    // List nama file non-gambar dalam body email
+                    $file_list_html .= '<li style="font-size: 13px; color:#475569; margin-bottom: 2px;">'.basename($att_path).'</li>';
                 }
+            }
+        }
+
+        if (!empty($image_previews_html) || !empty($file_list_html)) {
+             $attachments_comment_html .= '<div style="margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 8px;">';
+             
+             if (!empty($image_previews_html)) {
+                 $attachments_comment_html .= '<p style="font-size: 13px; font-weight: 600; margin: 0 0 4px; color: #0f172a;">Image Previews:</p>';
+                 $attachments_comment_html .= '<div>'.$image_previews_html.'</div>';
+             }
+
+             if (!empty($file_list_html)) {
+                 $attachments_comment_html .= '<p style="font-size: 13px; font-weight: 600; margin: '.(empty($image_previews_html) ? '0' : '8px 0 4px').'; color: #0f172a;">Attached Files (Sent as attachment):</p>';
+                 $attachments_comment_html .= '<ul style="padding-left: 18px; margin: 0;">'.$file_list_html.'</ul>';
+             }
+             
+             $attachments_comment_html .= '</div>';
+        }
+    }
+}
                 
                 // BARIS YANG TELAH DIMODIFIKASI UNTUK INLINE CSS BUBBLE CHAT
                 $history_html .= '<div class="bubble" style="background-color: #eef2ff; border-radius: 12px; padding: 12px; margin-bottom: 8px; border: 1px solid #e2e8f0;">
@@ -1230,11 +1300,11 @@ if ($page === 'logout') {
                                                 <div class="mt-4 flex text-sm text-slate-600">
                                                     <label for="images" class="relative cursor-pointer rounded-md bg-white font-medium text-indigo-600 focus-within:outline-none focus-within:ring-2 focus-within:ring-indigo-500 focus-within:ring-offset-2 hover:text-indigo-500">
                                                         <span>Upload files</span>
-                                                        <input id="images" name="images[]" type="file" class="sr-only" accept="image/png, image/jpeg, image/gif" multiple>
+                                                        <input id="images" name="images[]" type="file" class="sr-only" accept="image/png, image/jpeg, image/gif, .xlsx, .xls, text/plain, .log" multiple>
                                                     </label>
                                                     <p class="pl-1">or drag and drop</p>
                                                 </div>
-                                                <p class="text-xs text-slate-500">PNG, JPG, GIF up to 10MB</p>
+                                                <p class="text-xs text-slate-500">PNG, JPG, GIF, Excel, Text Log (.xlsx, .xls, .txt, .log) up to 10MB</p>
                                             </div>
                                             <div id="image-preview-wrapper" class="hidden w-full">
                                                 <div id="image-preview-list" class="flex flex-wrap gap-4"></div>
@@ -1355,15 +1425,32 @@ if ($page === 'logout') {
                                         <h4 class="font-semibold text-slate-600 text-sm uppercase tracking-wider">Description</h4>
                                         <p class="mt-3 text-sm text-slate-700"><?php echo nl2br(htmlspecialchars($issue['description'])); ?></p>
                                     </div>
+
                                     <?php 
                                         $images = !empty($issue['image_paths']) ? json_decode($issue['image_paths'], true) : [];
                                         if (!empty($images)): 
+                                            // Ikon file SVG untuk placeholder non-gambar
+                                            $file_icon_svg = '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600/70"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="10" y1="13" x2="14" y2="13"></line><line x1="10" y1="17" x2="14" y2="17"></line></svg>';
+                                            $allowed_image_ext = ['jpg', 'jpeg', 'png', 'gif'];
                                     ?>
                                     <div class="col-span-3 md:col-span-2 bg-white p-4 rounded-xl shadow-sm border">
                                          <h4 class="font-semibold text-slate-600 text-sm uppercase tracking-wider">Attachments</h4>
                                          <div class="mt-3 grid grid-cols-2 md:grid-cols-3 gap-4">
-                                            <?php foreach($images as $path): if(file_exists($path)): ?>
-                                                <img src="<?php echo htmlspecialchars($path); ?>" alt="Issue Image" class="w-full h-auto object-cover rounded-lg shadow-md">
+                                            <?php foreach($images as $path): if(file_exists($path)): 
+                                                $file_extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+                                                $is_image = in_array($file_extension, $allowed_image_ext);
+                                            ?>
+                                                <a href="<?php echo htmlspecialchars($path); ?>" target="_blank" class="block w-full h-auto object-cover rounded-lg shadow-md hover:ring-2 hover:ring-indigo-400 overflow-hidden relative group">
+                                                    <?php if ($is_image): ?>
+                                                        <img src="<?php echo htmlspecialchars($path); ?>" alt="Issue Image" class="w-full h-auto object-cover rounded-lg shadow-md">
+                                                    <?php else: ?>
+                                                        <div class="w-full h-32 flex flex-col items-center justify-center bg-slate-100 p-2 text-center">
+                                                            <?php echo $file_icon_svg; ?>
+                                                            <p class="text-xs mt-1 text-slate-600 truncate w-full px-2"><?php echo htmlspecialchars(basename($path)); ?></p>
+                                                            <p class="text-[10px] text-slate-400 uppercase"><?php echo $file_extension; ?> File</p>
+                                                        </div>
+                                                    <?php endif; ?>
+                                                </a>
                                             <?php endif; endforeach; ?>
                                          </div>
                                     </div>
@@ -1383,14 +1470,29 @@ if ($page === 'logout') {
                                                     <div class="flex-grow p-3 rounded-lg <?php echo $isSystem ? 'bg-slate-50' : 'bg-indigo-50'; ?>">
                                                         <p class="font-semibold text-slate-800"><?php echo $author_display; ?> <span class="text-xs text-slate-500 font-normal ml-2"><?php echo date('d M Y, H:i', strtotime($update['created_at'])); ?></span></p>
                                                         <p class="mt-1 text-slate-700"><?php echo nl2br(htmlspecialchars($update['notes'])); ?></p>
+
                                                         <?php
                                                             if (!empty($update['attachments'])) {
                                                                 $attachments = json_decode($update['attachments'], true);
                                                                 if (is_array($attachments) && count($attachments) > 0) {
+                                                                    $allowed_image_ext = ['jpg', 'jpeg', 'png', 'gif'];
+                                                                    $file_icon_svg_small = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600/70"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
+
                                                                     echo '<div class="mt-2 flex flex-wrap gap-2">';
                                                                     foreach($attachments as $att_path) {
                                                                         if (file_exists($att_path)) {
-                                                                            echo '<a href="'.htmlspecialchars($att_path).'" target="_blank"><img src="'.htmlspecialchars($att_path).'" class="w-20 h-20 object-cover rounded-md border hover:ring-2 hover:ring-indigo-400"></a>';
+                                                                            $file_extension = strtolower(pathinfo($att_path, PATHINFO_EXTENSION));
+                                                                            $is_image = in_array($file_extension, $allowed_image_ext);
+                                                                            $file_name = htmlspecialchars(basename($att_path));
+
+                                                                            if ($is_image) {
+                                                                                echo '<a href="'.htmlspecialchars($att_path).'" target="_blank"><img src="'.htmlspecialchars($att_path).'" alt="'.$file_name.'" class="w-20 h-20 object-cover rounded-md border hover:ring-2 hover:ring-indigo-400"></a>';
+                                                                            } else {
+                                                                                echo '<a href="'.htmlspecialchars($att_path).'" target="_blank" class="w-20 h-20 flex flex-col items-center justify-center bg-slate-100 rounded-md border text-center hover:ring-2 hover:ring-indigo-400 p-1">
+                                                                                        '.$file_icon_svg_small.'
+                                                                                        <p class="text-[10px] text-slate-600 truncate w-full">'.$file_name.'</p>
+                                                                                      </a>';
+                                                                            }
                                                                         }
                                                                     }
                                                                     echo '</div>';
@@ -1430,7 +1532,7 @@ if ($page === 'logout') {
                                                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
                                                     Attach Files
                                                 </label>
-                                                <input type="file" name="comment_attachments[]" id="comment-attachments-page" class="sr-only" multiple accept="image/png, image/jpeg, image/gif">
+                                                <input type="file" name="comment_attachments[]" id="comment-attachments-page" class="sr-only" multiple accept="image/png, image/jpeg, image/gif, .xlsx, .xls, text/plain, .log">
                                                 <div id="comment-attachment-previews-page" class="mt-2 flex flex-wrap gap-2"></div>
                                             </div>
                                             <div class="text-right mt-4">
@@ -1463,7 +1565,7 @@ if ($page === 'logout') {
                 <h2 id="modalTitle" class="text-xl font-bold text-slate-800"></h2>
                 <button id="closeModalBtn" class="text-slate-400 hover:text-slate-600 text-3xl leading-none">&times;</button>
             </div>
-            <div class="p-6 overflow-y-auto bg-slate-50/50">
+            <div class="p-6 overflow-y-auto bg-slate-50/50" id="modalScrollArea">
                 <div class="grid grid-cols-3 grid-rows-auto gap-4">
                     <div class="col-span-3 bg-white p-4 rounded-xl shadow-sm border min-h-[110px] flex items-center justify-center">
                         <div id="modalBreadcrumb"></div>
@@ -1516,7 +1618,7 @@ if ($page === 'logout') {
                                 <label for="comment-attachments" class="text-sm font-medium text-indigo-600 cursor-pointer hover:text-indigo-800">
                                     + Add Attachment
                                 </label>
-                                <input type="file" name="attachments[]" id="comment-attachments" class="sr-only" multiple accept="image/png, image/jpeg, image/gif">
+                                <input type="file" name="attachments[]" id="comment-attachments" class="sr-only" multiple accept="image/png, image/jpeg, image/gif, .xlsx, .xls, text/plain, .log">
                             </div>
                             <div id="comment-attachment-previews" class="mt-2 flex flex-wrap gap-2"></div>
                             <div class="text-right mt-2">
@@ -1537,6 +1639,122 @@ if ($page === 'logout') {
     </div>
 
 <script>
+// --- FILE: index.php (sekitar baris 1200, di dalam tag <script>) ---
+
+// Global state arrays for managing file deletions before submission
+let filesState = { main: [], modal: [], page: [] }; 
+
+const createFileList = (filesArray) => {
+    // Fungsi untuk membuat FileList yang dapat di-assign ke input type="file"
+    if (filesArray.length === 0) return new DataTransfer().files;
+    
+    const dataTransfer = new DataTransfer();
+    filesArray.forEach(file => {
+        dataTransfer.items.add(file);
+    });
+    return dataTransfer.files;
+};
+
+// SVG Icon untuk Placeholder File Non-gambar (gunakan yang sudah didefinisikan sebelumnya)
+const fileIconSvgSmall = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600/70"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
+
+// Fungsi untuk membuat tombol hapus
+const addDeleteButton = (containerEl, type, index, filesArray, inputElement, previewContainer) => {
+    const deleteBtn = document.createElement('button');
+    deleteBtn.innerHTML = '&times;';
+    deleteBtn.title = 'Remove Attachment';
+    deleteBtn.className = 'absolute top-0 right-0 p-1 text-white bg-red-500 rounded-bl-lg rounded-tr-lg text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity z-10';
+    
+    deleteBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        let scrollContainer = null;
+        // Gunakan ID yang baru ditambahkan untuk akses yang lebih andal
+        if (type === 'modal') {
+             scrollContainer = document.getElementById('modalScrollArea');
+        } else if (type === 'page') {
+             scrollContainer = document.documentElement; 
+        }
+        
+        // Simpan scroll position SEBELUM DOM manipulation
+        const oldScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+
+        // 1. Hapus file dari state array
+        filesArray.splice(index, 1); 
+        
+        // 2. Perbarui FileList pada input file
+        inputElement.files = createFileList(filesArray);
+        
+        // 3. Render ulang preview
+        renderFilePreviews(filesArray, previewContainer, inputElement, type); 
+        
+        // 4. Logika khusus
+        if (type === 'main') {
+            if (filesArray.length === 0) {
+                document.getElementById('image-preview-wrapper').classList.add('hidden');
+                document.getElementById('image-prompt').classList.remove('hidden');
+            }
+        }
+        
+        // 5. Restore scroll position
+        if (scrollContainer) {
+            // Gunakan setTimeout untuk memastikan browser selesai re-render sebelum scroll diatur
+            setTimeout(() => {
+                scrollContainer.scrollTop = oldScrollTop;
+            }, 0); 
+        }
+    };
+    containerEl.appendChild(deleteBtn);
+};
+
+// Fungsi generik untuk me-render semua preview file
+const renderFilePreviews = (filesArray, previewContainer, inputElement, type) => {
+    previewContainer.innerHTML = ''; // Hapus preview lama
+
+    // Logika khusus untuk tampilan hover di container utama (Create Ticket)
+    if (type === 'main') {
+        previewContainer.parentElement.classList.remove('hidden');
+        document.getElementById('image-prompt').classList.add('hidden');
+    }
+    
+    // SVG Icon untuk Placeholder File Non-gambar (diulang di sini untuk memastikan ketersediaan)
+    const fileIconSvgSmall = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600/70"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
+
+
+    filesArray.forEach((file, index) => {
+        const isImage = file.type.startsWith('image/');
+        const fileName = file.name;
+
+        const previewContainerEl = document.createElement('div');
+        
+        // FIX: Pastikan kelas 'relative' ditambahkan ke container untuk menambatkan tombol 'absolute'
+        let baseClass = type === 'main' ? 'w-24 h-24 border rounded-lg' : 'w-20 h-20 border rounded-md';
+        previewContainerEl.className = `${baseClass} relative overflow-hidden group cursor-pointer`; 
+
+        
+        // 1. Render Preview (Image atau Placeholder)
+        if (isImage) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const img = document.createElement('img');
+                img.src = e.target.result;
+                img.className = 'w-full h-full object-cover';
+                previewContainerEl.appendChild(img);
+                addDeleteButton(previewContainerEl, type, index, filesArray, inputElement, previewContainer); 
+            };
+            reader.readAsDataURL(file);
+        } else {
+             // Tampilkan Placeholder untuk file non-gambar
+             previewContainerEl.className += ' flex flex-col items-center justify-center bg-slate-100 p-1 text-center';
+             previewContainerEl.innerHTML = fileIconSvgSmall + 
+                                            `<p class="text-[10px] text-slate-600 truncate w-full px-1 mt-1">${fileName}</p>`;
+             addDeleteButton(previewContainerEl, type, index, filesArray, inputElement, previewContainer); 
+        }
+
+        previewContainer.appendChild(previewContainerEl);
+    });
+};
 document.addEventListener('DOMContentLoaded', function() {
     const modal = document.getElementById('issueModal');
     const modalContent = document.getElementById('modalContent');
@@ -1584,13 +1802,38 @@ document.addEventListener('DOMContentLoaded', function() {
             } catch (e) { images = []; }
         }
 
+const allowedImageExt = ['jpg', 'jpeg', 'png', 'gif'];
+        const fileIconSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600/70"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="10" y1="13" x2="14" y2="13"></line><line x1="10" y1="17" x2="14" y2="17"></line></svg>';
+        
         if (images && images.length > 0) {
             attachmentBox.classList.remove('hidden');
             images.forEach(path => {
-                const img = document.createElement('img');
-                img.src = path;
-                img.className = 'w-full h-auto object-cover rounded-lg shadow-md';
-                imageGrid.appendChild(img);
+                const extension = path.split('.').pop().toLowerCase();
+                const isImage = allowedImageExt.includes(extension);
+                
+                const link = document.createElement('a');
+                link.href = path;
+                link.target = '_blank'; // Membuka di tab baru
+                link.className = 'block w-full h-auto object-cover rounded-lg shadow-md hover:ring-2 hover:ring-indigo-400 overflow-hidden relative group';
+
+                if (isImage) {
+                    const img = document.createElement('img');
+                    img.src = path;
+                    img.alt = 'Issue Image';
+                    img.className = 'w-full h-auto object-cover rounded-lg shadow-md';
+                    link.appendChild(img);
+                } else {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'w-full h-32 flex flex-col items-center justify-center bg-slate-100 p-2 text-center';
+                    
+                    const fileName = path.split('/').pop().split('\\').pop(); // Get filename
+                    
+                    placeholder.innerHTML = fileIconSvg + 
+                                            `<p class="text-xs mt-1 text-slate-600 truncate w-full px-2">${fileName}</p>` + 
+                                            `<p class="text-[10px] text-slate-400 uppercase">${extension} File</p>`;
+                    link.appendChild(placeholder);
+                }
+                imageGrid.appendChild(link);
             });
         } else {
             attachmentBox.classList.add('hidden');
@@ -1648,6 +1891,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const authorInitial = commentData.author_display.charAt(0).toUpperCase();
         const createdDate = new Date(commentData.created_at).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' });
 
+        const allowedImageExt = ['jpg', 'jpeg', 'png', 'gif'];
+        const fileIconSvgSmall = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600/70"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
+
         let attachmentsHTML = '';
         if (commentData.attachments) {
             try {
@@ -1655,7 +1901,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (Array.isArray(attachments) && attachments.length > 0) {
                     attachmentsHTML += '<div class="mt-2 flex flex-wrap gap-2">';
                     attachments.forEach(path => {
-                         attachmentsHTML += `<a href="${path}" target="_blank"><img src="${path}" class="w-20 h-20 object-cover rounded-md border"></a>`;
+                        const extension = path.split('.').pop().toLowerCase();
+                        const isImage = allowedImageExt.includes(extension);
+                        const fileName = path.split('/').pop().split('\\').pop();
+                        
+                        if (isImage) {
+                            attachmentsHTML += `<a href="${path}" target="_blank"><img src="${path}" alt="${fileName}" class="w-20 h-20 object-cover rounded-md border hover:ring-2 hover:ring-indigo-400"></a>`;
+                        } else {
+                             attachmentsHTML += `<a href="${path}" target="_blank" class="w-20 h-20 flex flex-col items-center justify-center bg-slate-100 rounded-md border text-center hover:ring-2 hover:ring-indigo-400 p-1">
+                                                    ${fileIconSvgSmall}
+                                                    <p class="text-[10px] text-slate-600 truncate w-full">${fileName}</p>
+                                                </a>`;
+                        }
                     });
                     attachmentsHTML += '</div>';
                 }
@@ -1663,10 +1920,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         commentEl.innerHTML = `
-            <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white font-bold bg-slate-500">
+            <div class="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-white font-bold ${commentData.is_status_change ? 'bg-slate-400' : 'bg-indigo-500'}">
                 ${authorInitial}
             </div>
-            <div class="flex-grow p-3 rounded-lg bg-slate-50 border">
+            <div class="flex-grow p-3 rounded-lg ${commentData.is_status_change ? 'bg-slate-50' : 'bg-indigo-50'}">
                 <p class="font-semibold text-slate-800">${commentData.author_display} <span class="text-xs text-slate-500 font-normal ml-2">${createdDate}</span></p>
                 <p class="mt-1 text-slate-700">${commentData.notes.replace(/\n/g, '<br>')}</p>
                 ${attachmentsHTML}
@@ -1705,23 +1962,28 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
+// --- FILE: index.php (sekitar baris 1445) ---
+
     const commentAttachmentInput = document.getElementById('comment-attachments');
     const commentAttachmentPreviews = document.getElementById('comment-attachment-previews');
     if(commentAttachmentInput) {
         commentAttachmentInput.addEventListener('change', function(e) {
-            commentAttachmentPreviews.innerHTML = '';
-            Array.from(e.target.files).forEach(file => {
-                if(file.type.startsWith('image/')) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        const img = document.createElement('img');
-                        img.src = event.target.result;
-                        img.className = 'w-16 h-16 object-cover rounded-md border';
-                        commentAttachmentPreviews.appendChild(img);
-                    }
-                    reader.readAsDataURL(file);
-                }
-            });
+            
+            // Menggunakan ID yang lebih spesifik
+            const scrollContainer = document.getElementById('modalScrollArea');
+            const oldScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+            
+            filesState.modal = Array.from(e.target.files);
+            commentAttachmentInput.files = createFileList(filesState.modal);
+            
+            renderFilePreviews(filesState.modal, commentAttachmentPreviews, commentAttachmentInput, 'modal');
+            
+            // Restore scroll position after DOM manipulation
+            if (scrollContainer) {
+                setTimeout(() => {
+                    scrollContainer.scrollTop = oldScrollTop;
+                }, 0); 
+            }
         });
     }
 
@@ -1756,7 +2018,40 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         imageInput.addEventListener('change', e => {
-             handleFiles(e.target.files);
+             uploadContainer.addEventListener('drop', e => {
+            handleFiles(e.dataTransfer.files); // Menggunakan fungsi handleFiles
+        });
+        
+        const imageInput = document.getElementById('images');
+
+        // GANTI SELURUH FUNGSI handleFiles DAN LISTENERNYA
+        window.handleFiles = (files) => { 
+            filesState.main = Array.from(files);
+            
+            // Perbarui FileList input
+            imageInput.files = createFileList(filesState.main);
+
+            if (filesState.main.length === 0) {
+                 document.getElementById('image-preview-wrapper').classList.add('hidden');
+                 document.getElementById('image-prompt').classList.remove('hidden');
+                 return;
+            }
+
+            renderFilePreviews(filesState.main, previewList, imageInput, 'main');
+        };
+
+        if (imageInput) {
+             imageInput.addEventListener('change', (e) => window.handleFiles(e.target.files));
+        }
+        
+        removeAllBtn.addEventListener('click', () => {
+            // Reset state dan UI
+            filesState.main = [];
+            imageInput.files = createFileList(filesState.main);
+            previewList.innerHTML = '';
+            previewWrapper.classList.add('hidden');
+            imagePrompt.classList.remove('hidden');
+        });
         });
         
         removeAllBtn.addEventListener('click', () => {
@@ -1766,26 +2061,42 @@ document.addEventListener('DOMContentLoaded', function() {
             imagePrompt.classList.remove('hidden');
         });
 
+// --- FILE: index.php (sekitar baris 1404) ---
+
         function handleFiles(files) {
             if (files.length === 0) return;
             previewList.innerHTML = '';
             imagePrompt.classList.add('hidden');
             previewWrapper.classList.remove('hidden');
             
+            const fileIconSvgSmall = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="text-indigo-600/70"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>';
+
             Array.from(files).forEach(file => {
-                if (!file.type.startsWith('image/')) return;
-                const reader = new FileReader();
-                reader.onload = e => {
-                    const thumb = document.createElement('div');
-                    thumb.className = 'w-24 h-24 border rounded-lg overflow-hidden';
-                    thumb.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
-                    previewList.appendChild(thumb);
-                };
-                reader.readAsDataURL(file);
+                const isImage = file.type.startsWith('image/');
+                const fileName = file.name;
+
+                const thumb = document.createElement('div');
+                thumb.className = 'w-24 h-24 border rounded-lg overflow-hidden relative';
+
+                if (isImage) {
+                    const reader = new FileReader();
+                    reader.onload = e => {
+                        thumb.innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
+                        previewList.appendChild(thumb);
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                     thumb.className += ' flex flex-col items-center justify-center bg-slate-100 p-1 text-center';
+                     thumb.innerHTML = fileIconSvgSmall + 
+                                       `<p class="text-[10px] text-slate-600 truncate w-full px-1 mt-1">${fileName}</p>`;
+                     previewList.appendChild(thumb);
+                }
             });
         }
     }
 
+
+// --- FILE: index.php (sekitar baris 1450, di dalam <script>) ---
 
     function setupEmailTagInput(inputId, hiddenInputId) {
         const input = document.getElementById(inputId);
@@ -1793,9 +2104,11 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const hiddenInput = document.getElementById(hiddenInputId);
         const container = input.parentElement;
-        let emails = [];
+        // Inisialisasi emails array.
+        let emails = []; 
 
         function updateHiddenInput() {
+            // Memastikan data di hidden field terpisah dengan koma
             hiddenInput.value = emails.join(',');
         }
 
@@ -1809,6 +2122,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const removeBtn = document.createElement('button');
             removeBtn.innerHTML = '&times;';
             removeBtn.addEventListener('click', () => {
+                // Filter email yang dihapus, hapus tag dari DOM, dan update hidden input
                 emails = emails.filter(e => e !== email);
                 container.removeChild(tag);
                 updateHiddenInput();
@@ -1816,21 +2130,55 @@ document.addEventListener('DOMContentLoaded', function() {
 
             tag.appendChild(emailSpan);
             tag.appendChild(removeBtn);
+            // Sisipkan tag baru sebelum input field
             container.insertBefore(tag, input);
         }
 
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ',') {
-                e.preventDefault();
-                let email = input.value.trim().replace(/,/g, '');
+        // --- NEW: FUNGSI UTAMA UNTUK MEMPROSES BULK INPUT ---
+        function processInput(inputValue) {
+            // Pisahkan input berdasarkan koma, trim whitespace, dan filter string kosong
+            let newEmails = inputValue.split(',').map(e => e.trim()).filter(e => e.length > 0);
+            let processedCount = 0;
+            
+            newEmails.forEach(email => {
+                // Validasi format email dan cek duplikasi sebelum ditambahkan
                 if (email && !emails.includes(email) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
                     emails.push(email);
                     createTag(email);
-                    updateHiddenInput();
+                    processedCount++;
                 }
-                input.value = '';
+            });
+            
+            if (processedCount > 0) {
+                updateHiddenInput();
+            }
+            input.value = ''; // Selalu kosongkan input field setelah diproses
+        }
+        
+        // 1. Handle Keydown (Enter, Comma) - Sekarang memanggil bulk processor
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ',') {
+                e.preventDefault();
+                processInput(input.value);
             }
         });
+        
+        // 2. Handle Paste untuk Bulk Input
+        input.addEventListener('paste', (e) => {
+             e.preventDefault();
+             const pasteData = e.clipboardData.getData('Text');
+             // Panggil processor dengan data dari clipboard
+             // Menggunakan setTimeout untuk memastikan event loop berjalan dan input dibersihkan
+             setTimeout(() => {
+                 processInput(pasteData);
+             }, 0);
+        });
+        
+        // 3. Handle Blur (Ketika user meninggalkan field) untuk memproses sisa teks
+        input.addEventListener('blur', () => {
+            processInput(input.value);
+        });
+
     }
 
     const ticketForm = document.getElementById('create-ticket-form');
@@ -1885,26 +2233,27 @@ document.addEventListener('DOMContentLoaded', function() {
         return html;
      };
 
+// --- FILE: index.php (sekitar baris 1475) ---
+
     const pageAttachmentInput = document.getElementById('comment-attachments-page');
     const pageAttachmentPreviews = document.getElementById('comment-attachment-previews-page');
     if(pageAttachmentInput) {
         pageAttachmentInput.addEventListener('change', function(e) {
-            pageAttachmentPreviews.innerHTML = '';
-            Array.from(e.target.files).forEach(file => {
-                if(file.type.startsWith('image/')) {
-                    const reader = new FileReader();
-                    reader.onload = (event) => {
-                        const previewContainer = document.createElement('div');
-                        previewContainer.className = 'relative';
-                        const img = document.createElement('img');
-                        img.src = event.target.result;
-                        img.className = 'w-20 h-20 object-cover rounded-md border';
-                        previewContainer.appendChild(img);
-                        pageAttachmentPreviews.appendChild(previewContainer);
-                    }
-                    reader.readAsDataURL(file);
-                }
-            });
+            
+            const scrollContainer = document.documentElement; // Scroll container utama halaman
+            const oldScrollTop = scrollContainer ? scrollContainer.scrollTop : 0;
+            
+            filesState.page = Array.from(e.target.files);
+            pageAttachmentInput.files = createFileList(filesState.page);
+            
+            renderFilePreviews(filesState.page, pageAttachmentPreviews, pageAttachmentInput, 'page');
+            
+            // Restore scroll position after DOM manipulation
+            if (scrollContainer) {
+                setTimeout(() => {
+                    scrollContainer.scrollTop = oldScrollTop;
+                }, 0); 
+            }
         });
     }
 
